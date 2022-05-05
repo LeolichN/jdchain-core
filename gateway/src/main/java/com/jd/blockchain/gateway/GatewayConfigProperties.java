@@ -46,7 +46,7 @@ public class GatewayConfigProperties {
 	// 共识节点自动感知间隔（毫秒），0及负值表示仅感知一次
 	public static final String TOPOLOGY_AWARE_INTERVAL = "topology.aware.interval";
 	// 节点连接心跳（毫秒），及时感知连接有效性，0及负值表示关闭
-	public static final String PEER_CONNECTION_PIN = "peer.connection.pin";
+	public static final String PEER_CONNECTION_PING = "peer.connection.ping";
 	// 节点连接认证（毫秒），及时感知连接合法性，0及负值表示关闭。对于不存在节点变更的场景可关闭
 	public static final String PEER_CONNECTION_AUTH = "peer.connection.auth";
 
@@ -72,15 +72,13 @@ public class GatewayConfigProperties {
 
 	private HttpConfig http = new HttpConfig();
 
-	private ProviderConfig providerConfig = new ProviderConfig();
-
 	private NetworkAddress masterPeerAddress = null;
 	private SSLClientAuth masterPeerClientAuth = SSLClientAuth.NONE;
 	private boolean consensusSecure;
 	private boolean storeTopology;
 	private boolean awareTopology;
 	private int awareTopologyInterval;
-	private int peerConnectionPin;
+	private int peerConnectionPing;
 	private int peerConnectionAuth;
 
 	private String dataRetrievalUrl;
@@ -122,10 +120,6 @@ public class GatewayConfigProperties {
 
 	public void setSchemaRetrievalUrl(String schemaRetrievalUrl) {
 		this.schemaRetrievalUrl = schemaRetrievalUrl;
-	}
-
-	public ProviderConfig providerConfig() {
-		return providerConfig;
 	}
 
 	public void setMasterPeerAddress(NetworkAddress peerAddress) {
@@ -178,7 +172,7 @@ public class GatewayConfigProperties {
 		configProps.setAwareTopology(getBoolean(props, TOPOLOGY_AWARE, false, true));
 		configProps.setAwareTopologyInterval(getInt(props, TOPOLOGY_AWARE_INTERVAL, false));
 
-		configProps.setPeerConnectionPin(getInt(props, PEER_CONNECTION_PIN, false));
+		configProps.setPeerConnectionPing(getInt(props, PEER_CONNECTION_PING, false));
 		configProps.setPeerConnectionAuth(getInt(props, PEER_CONNECTION_AUTH, false));
 
 		String dataRetrievalUrl = getProperty(props, DATA_RETRIEVAL_URL, false);
@@ -186,15 +180,6 @@ public class GatewayConfigProperties {
 
 		String schemaRetrievalUrl = getProperty(props, SCHEMA_RETRIEVAL_URL, false);
 		configProps.schemaRetrievalUrl = schemaRetrievalUrl;
-
-		String providers = getProperty(props, PEER_PROVIDERS, true);
-		if (providers == null || providers.length() <= 0) {
-			throw new IllegalArgumentException("Miss peer providers!");
-		}
-		String[] providerArray = providers.split(",");
-		for (String provider : providerArray) {
-			configProps.providerConfig.add(provider);
-		}
 
 		String pubkeyString = getProperty(props, DEFAULT_PUBKEY, false);
 		String capath = getProperty(props, DEFAULT_CA_PATH, false);
@@ -287,12 +272,12 @@ public class GatewayConfigProperties {
 		this.awareTopologyInterval = awareTopologyInterval;
 	}
 
-	public int getPeerConnectionPin() {
-		return peerConnectionPin;
+	public int getPeerConnectionPing() {
+		return peerConnectionPing;
 	}
 
-	public void setPeerConnectionPin(int peerConnectionPin) {
-		this.peerConnectionPin = peerConnectionPin;
+	public void setPeerConnectionPing(int peerConnectionPing) {
+		this.peerConnectionPing = peerConnectionPing;
 	}
 
 	public int getPeerConnectionAuth() {
@@ -304,18 +289,6 @@ public class GatewayConfigProperties {
 	}
 
 	// ------------------------------------------------------------
-
-	public static class ProviderConfig {
-		List<String> providers = new ArrayList<>();
-
-		public void add(String provider) {
-			providers.add(provider);
-		}
-
-		public List<String> getProviders() {
-			return providers;
-		}
-	}
 
 	public static class HttpConfig {
 

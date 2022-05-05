@@ -381,9 +381,8 @@ public class BlockBrowserController implements BlockchainBrowserService {
 		byte[] chainCodeBytes = contractInfo.getChainCode();
 		try {
 			// 将反编译chainCode
-			String mainClassJava = CONTRACT_PROCESSOR.decompileEntranceClass(chainCodeBytes);
+			String mainClassJava = CONTRACT_PROCESSOR.decompileEntranceClass(chainCodeBytes, contractInfo.getLang());
 			contractSettings.setChainCode(mainClassJava);
-			contractSettings.setChainCodeVersion(contractInfo.getChainCodeVersion());
 		} catch (Exception e) {
 			// 打印日志
 			logger.error(String.format("Decompile contract[%s] error !!!", contractInfo.getAddress().toBase58()), e);

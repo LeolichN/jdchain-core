@@ -1,8 +1,7 @@
 package com.jd.blockchain.ledger.core;
 
-import com.jd.blockchain.ledger.GenesisUser;
-import com.jd.blockchain.ledger.GenesisUserConfig;
-import com.jd.blockchain.ledger.IdentityMode;
+import com.jd.blockchain.contract.jvm.JVMContractRuntimeConfig;
+import com.jd.blockchain.ledger.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,13 +10,6 @@ import com.jd.binaryproto.DataContractRegistry;
 import com.jd.blockchain.crypto.Crypto;
 import com.jd.blockchain.crypto.HashDigest;
 import com.jd.blockchain.crypto.HashFunction;
-import com.jd.blockchain.ledger.LedgerAdminSettings;
-import com.jd.blockchain.ledger.LedgerException;
-import com.jd.blockchain.ledger.LedgerInitSetting;
-import com.jd.blockchain.ledger.LedgerMetadata;
-import com.jd.blockchain.ledger.LedgerMetadata_V2;
-import com.jd.blockchain.ledger.LedgerSettings;
-import com.jd.blockchain.ledger.ParticipantNode;
 import com.jd.blockchain.storage.service.ExPolicy;
 import com.jd.blockchain.storage.service.ExPolicyKVStorage;
 import com.jd.blockchain.storage.service.VersioningKVStorage;
@@ -146,6 +138,7 @@ public class LedgerAdminDataSetEditor implements Transactional, LedgerAdminDataS
 		this.metadata.setLedgerCertificates(initSetting.getLedgerCertificates());
 		this.metadata.setLedgerStructureVersion(initSetting.getLedgerStructureVersion());
 		this.metadata.setGenesisUsers(initSetting.getGenesisUsers());
+		this.metadata.setContractRuntimeConfig(initSetting.getContractRuntimeConfig());
 		// 新配置；
 		this.settings = new LedgerConfiguration(initSetting.getConsensusProvider(), initSetting.getConsensusSettings(),
 				initSetting.getCryptoSetting());
@@ -348,13 +341,18 @@ public class LedgerAdminDataSetEditor implements Transactional, LedgerAdminDataS
 		metadata.setSettingsHash(settingsHash);
 		if (previousSettingHash == null || !previousSettingHash.equals(settingsHash)) {
 			Bytes settingsKey = encodeSettingsKey(settingsHash);
-			boolean nx = storage.set(settingsKey, settingsBytes, ExPolicy.NOT_EXISTING);
-			if (!nx) {
-				String base58MetadataHash = settingsHash.toBase58();
-				// 有可能发生了并发写入冲突，不同的节点都向同一个存储服务器上写入数据；
-				String errMsg = "Ledger metadata already exist! --[MetadataHash=" + base58MetadataHash + "]";
-				LOGGER.warn(errMsg);
-				throw new LedgerException(errMsg);
+			if (!storage.exist(settingsKey)) {
+				boolean nx = storage.set(settingsKey, settingsBytes, ExPolicy.NOT_EXISTING);
+				if (!nx) {
+					String base58MetadataHash = settingsHash.toBase58();
+					// 有可能发生了并发写入冲突，不同的节点都向同一个存储服务器上写入数据；
+					String errMsg = "Ledger metadata already exist! --[MetadataHash=" + base58MetadataHash + "]";
+					LOGGER.warn(errMsg);
+					throw new LedgerException(errMsg);
+				}
+			} else {
+				//可能发生在共识切换的场景，共识又切换回以前的共识方式，那么key肯定是存在的，不需要重复设置到数据库
+				LOGGER.info("Switch to old consensus, no need to set setting key repeatly!");
 			}
 		}
 
@@ -368,13 +366,18 @@ public class LedgerAdminDataSetEditor implements Transactional, LedgerAdminDataS
 			// String metadataKey = encodeMetadataKey(base58MetadataHash);
 			Bytes metadataKey = encodeMetadataKey(metadataHash);
 
-			boolean nx = storage.set(metadataKey, metadataBytes, ExPolicy.NOT_EXISTING);
-			if (!nx) {
-				String base58MetadataHash = metadataHash.toBase58();
-				// 有可能发生了并发写入冲突，不同的节点都向同一个存储服务器上写入数据；
-				String errMsg = "Ledger metadata already exist! --[MetadataHash=" + base58MetadataHash + "]";
-				LOGGER.warn(errMsg);
-				throw new LedgerException(errMsg);
+			if (!storage.exist(metadataKey)) {
+				boolean nx = storage.set(metadataKey, metadataBytes, ExPolicy.NOT_EXISTING);
+				if (!nx) {
+					String base58MetadataHash = metadataHash.toBase58();
+					// 有可能发生了并发写入冲突，不同的节点都向同一个存储服务器上写入数据；
+					String errMsg = "Ledger metadata already exist! --[MetadataHash=" + base58MetadataHash + "]";
+					LOGGER.warn(errMsg);
+					throw new LedgerException(errMsg);
+				}
+			} else {
+				//可能发生在共识切换的场景，共识又切换回以前的共识方式，那么key肯定是存在的，不需要重复设置到数据库
+				LOGGER.info("Switch to old consensus, no need to set meta key repeatly!");
 			}
 
 			adminDataHash = metadataHash;
@@ -425,6 +428,8 @@ public class LedgerAdminDataSetEditor implements Transactional, LedgerAdminDataS
 
 		private GenesisUser[] genesisUsers;
 
+		private ContractRuntimeConfig contractRuntimeConfig;
+
 		public LedgerMetadataInfo() {
 		}
 
@@ -445,6 +450,11 @@ public class LedgerAdminDataSetEditor implements Transactional, LedgerAdminDataS
 				for (int i = 0; i < users.length; i++) {
 					this.genesisUsers[i] = new GenesisUserConfig(users[i]);
 				}
+			}
+			if(null != metadata.getContractRuntimeConfig()) {
+				this.contractRuntimeConfig = new JVMContractRuntimeConfig(metadata.getContractRuntimeConfig());
+			} else {
+				this.contractRuntimeConfig = new JVMContractRuntimeConfig();
 			}
 		}
 
@@ -474,6 +484,11 @@ public class LedgerAdminDataSetEditor implements Transactional, LedgerAdminDataS
 		@Override
 		public GenesisUser[] getGenesisUsers() {
 			return genesisUsers;
+		}
+
+		@Override
+		public ContractRuntimeConfig getContractRuntimeConfig() {
+			return contractRuntimeConfig;
 		}
 
 		public void setLedgerCertificates(String[] ledgerCertificates) {
@@ -527,6 +542,10 @@ public class LedgerAdminDataSetEditor implements Transactional, LedgerAdminDataS
 
 		public void setLedgerStructureVersion(long ledgerStructureVersion) {
 			this.ledgerStructureVersion = ledgerStructureVersion;
+		}
+
+		public void setContractRuntimeConfig(ContractRuntimeConfig contractRuntimeConfig) {
+			this.contractRuntimeConfig = contractRuntimeConfig;
 		}
 	}
 

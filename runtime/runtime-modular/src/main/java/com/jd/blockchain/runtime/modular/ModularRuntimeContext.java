@@ -1,78 +1,87 @@
 package com.jd.blockchain.runtime.modular;
 
-import java.io.IOException;
-import java.net.URL;
-import java.net.URLClassLoader;
-
 import com.jd.blockchain.runtime.RuntimeContext;
-
+import com.jd.blockchain.runtime.RuntimeSecurityManager;
 import utils.io.FileSystemStorage;
 import utils.io.RuntimeIOException;
 import utils.io.Storage;
 
+import java.io.IOException;
+import java.net.URL;
+import java.net.URLClassLoader;
+
 public class ModularRuntimeContext extends RuntimeContext {
 
-	private String runtimeDir;
+    private String runtimeDir;
 
-	private JarsModule libModule;
-	
-	private EnvSettings environment;
+    private JarsModule libModule;
 
-	public ModularRuntimeContext(String runtimeDir, JarsModule libModule, 
-			boolean productMode) {
-		this.environment = new EnvSettings();
-		this.environment.setProductMode(productMode);
-		this.environment.setRuntimeDir(runtimeDir);
-		this.runtimeDir = runtimeDir;
-		this.libModule = libModule;
-	}
-	
-	void register() {
-		RuntimeContext.set(this);
-	}
+    private EnvSettings environment;
 
-	@Override
-	public Environment getEnvironment() {
-		return environment;
-	}
+    protected RuntimeSecurityManager securityManager;
 
-	@Override
-	protected String getRuntimeDir() {
-		return runtimeDir;
-	}
+    public ModularRuntimeContext(String runtimeDir, JarsModule libModule,
+                                 boolean productMode) {
+        this.environment = new EnvSettings();
+        this.environment.setProductMode(productMode);
+        this.environment.setRuntimeDir(runtimeDir);
+        this.runtimeDir = runtimeDir;
+        this.libModule = libModule;
+        this.securityManager = new RuntimeSecurityManager(false);
+        System.setSecurityManager(securityManager);
+    }
 
-	@Override
-	protected URLClassLoader createDynamicModuleClassLoader(URL jarURL) {
-		return new URLClassLoader(new URL[] {jarURL}, libModule.getModuleClassLoader());
-	}
+    void register() {
+        RuntimeContext.set(this);
+    }
 
-	// --------------------------- inner types -----------------------------
+    @Override
+    public Environment getEnvironment() {
+        return environment;
+    }
 
-	private static class EnvSettings implements Environment {
+    @Override
+    public RuntimeSecurityManager getSecurityManager() {
+        return securityManager;
+    }
 
-		private boolean productMode;
-		private Storage runtimeStorage;
+    @Override
+    protected String getRuntimeDir() {
+        return runtimeDir;
+    }
 
-		@Override
-		public boolean isProductMode() {
-			return productMode;
-		}
+    @Override
+    protected URLClassLoader createDynamicModuleClassLoader(URL jarURL) {
+        return new URLClassLoader(new URL[]{jarURL}, libModule.getModuleClassLoader());
+    }
 
-		public void setProductMode(boolean productMode) {
-			this.productMode = productMode;
-		}
+    // --------------------------- inner types -----------------------------
 
-		@Override
-		public Storage getRuntimeStorage() {
-			return runtimeStorage;
-		}
+    private static class EnvSettings implements Environment {
 
-		public void setRuntimeDir(String runtimeDir) {
-			try {
-				this.runtimeStorage = new FileSystemStorage(runtimeDir);
-			} catch (IOException e) {
-				throw new RuntimeIOException(e.getMessage(), e);
-			}
-		}
-	}
+        private boolean productMode;
+        private Storage runtimeStorage;
+
+        @Override
+        public boolean isProductMode() {
+            return productMode;
+        }
+
+        public void setProductMode(boolean productMode) {
+            this.productMode = productMode;
+        }
+
+        @Override
+        public Storage getRuntimeStorage() {
+            return runtimeStorage;
+        }
+
+        public void setRuntimeDir(String runtimeDir) {
+            try {
+                this.runtimeStorage = new FileSystemStorage(runtimeDir);
+            } catch (IOException e) {
+                throw new RuntimeIOException(e.getMessage(), e);
+            }
+        }
+    }
 }

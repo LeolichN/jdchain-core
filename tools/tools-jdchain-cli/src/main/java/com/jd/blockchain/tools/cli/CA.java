@@ -3,12 +3,7 @@ package com.jd.blockchain.tools.cli;
 import com.jd.blockchain.ca.CertificateRole;
 import com.jd.blockchain.ca.CertificateUsage;
 import com.jd.blockchain.ca.CertificateUtils;
-import com.jd.blockchain.crypto.AsymmetricKeypair;
-import com.jd.blockchain.crypto.Crypto;
-import com.jd.blockchain.crypto.KeyGenUtils;
-import com.jd.blockchain.crypto.PrivKey;
-import com.jd.blockchain.crypto.PubKey;
-import com.jd.blockchain.crypto.SignatureFunction;
+import com.jd.blockchain.crypto.*;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
@@ -16,13 +11,7 @@ import org.bouncycastle.asn1.pkcs.Attribute;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.X500NameBuilder;
 import org.bouncycastle.asn1.x500.style.BCStyle;
-import org.bouncycastle.asn1.x509.BasicConstraints;
-import org.bouncycastle.asn1.x509.Certificate;
-import org.bouncycastle.asn1.x509.ExtendedKeyUsage;
-import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.Extensions;
-import org.bouncycastle.asn1.x509.KeyPurposeId;
-import org.bouncycastle.asn1.x509.KeyUsage;
+import org.bouncycastle.asn1.x509.*;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -36,6 +25,7 @@ import org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder;
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder;
 import picocli.CommandLine;
 import utils.StringUtils;
+import utils.certs.CertsHelper;
 import utils.io.FileUtils;
 
 import java.io.*;
@@ -44,13 +34,7 @@ import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * @description: JD Chain certificate management
@@ -449,7 +433,7 @@ class CARenew implements Runnable {
 @CommandLine.Command(name = "test", mixinStandardHelpOptions = true, header = "Create certificates for a testnet.")
 class CATest implements Runnable {
 
-    @CommandLine.Option(names = {"-a", "--algorithm"}, required = true, description = "Crypto algorithm", defaultValue = "ED25519")
+    @CommandLine.Option(names = {"-a", "--algorithm"}, required = true, description = "Crypto algorithm. defaultValue: ED25519. Use `-a GMSSL` generate GMSSL certs`", defaultValue = "ED25519")
     String algorithm;
 
     @CommandLine.Option(names = "--nodes", required = true, description = "Node size", defaultValue = "4")
@@ -479,6 +463,9 @@ class CATest implements Runnable {
     @CommandLine.Option(names = "--email", required = true, description = "Email address")
     String email;
 
+    @CommandLine.Option(names = "--out", required = false, description = "certs out path")
+    String outPath;
+
     @CommandLine.ParentCommand
     private CA caCli;
 
@@ -493,6 +480,34 @@ class CATest implements Runnable {
             if (StringUtils.isEmpty(password)) {
                 password = caCli.scanValue("password for all private keys");
             }
+
+            if ("GMSSL".equalsIgnoreCase(algorithm)) {
+
+                String sm2CertsOutPath = caCli.getCaHome() + File.separator + "sm2";
+                if (!StringUtils.isEmpty(outPath)) {
+                    sm2CertsOutPath = outPath;
+                }
+
+                //生成国密测试证书
+                File gmsslHome = new File(sm2CertsOutPath);
+                gmsslHome.mkdirs();
+
+                long expireTime = 10L * 365 * 24 * 60 * 60 * 1000;
+
+                CertsHelper.makeSMCaTestCerts(gmsslHome, nodes, gws, users, expireTime, password,
+                        new HashMap<ASN1ObjectIdentifier, String>() {{
+                            put(BCStyle.O, organization);
+                            put(BCStyle.C, country);
+                            put(BCStyle.ST, province);
+                            put(BCStyle.L, locality);
+                            put(BCStyle.EmailAddress, email);
+                        }}
+                );
+
+                System.out.println("create test gmssl certificates in [" + gmsslHome.getAbsolutePath() + "] success");
+                return;
+            }
+
             // 初始化公私钥对 root,peer[0~nodes-1],user[1~users]
             PrivKey issuerPrivKey = null;
             X509Certificate issuerCrt = null;

@@ -3,6 +3,7 @@ package com.jd.blockchain.tools.cli;
 import com.jd.blockchain.crypto.AsymmetricKeypair;
 import com.jd.blockchain.crypto.Crypto;
 import com.jd.blockchain.crypto.KeyGenUtils;
+import com.jd.blockchain.ledger.ConsensusTypeEnum;
 import net.lingala.zip4j.ZipFile;
 import net.lingala.zip4j.exception.ZipException;
 import picocli.CommandLine;
@@ -44,8 +45,14 @@ public class TestNet implements Runnable {
 @CommandLine.Command(name = "config", mixinStandardHelpOptions = true, header = "Generate testnet init configs.")
 class InitConfig implements Runnable {
 
+    @CommandLine.Option(names = {"-c", "--consensus"}, description = "Consensus, options: BFTSMART, RAFT, MQ", defaultValue = "BFTSMART")
+    ConsensusTypeEnum consensus;
+
     @CommandLine.Option(names = {"-a", "--algorithm"}, description = "Crypto algorithm", defaultValue = "ECDSA")
     String algorithm;
+
+    @CommandLine.Option(names = "--rabbit", description = "RabbitMQ Server address for MQ consensus")
+    String rabbit;
 
     @CommandLine.Option(names = "--peer-size", description = "Size of peers", defaultValue = "4")
     int peerSize;
@@ -55,7 +62,7 @@ class InitConfig implements Runnable {
     String[] initHosts;
 
     @CommandLine.Option(names = "--init-ports", description = "Ports for initialization, input one (all the peers use the same manage port) or peer-size(comma division)",
-            defaultValue = "8800,8810,8820,8830", split = ",")
+            defaultValue = "8800", split = ",")
     int[] initPorts;
 
     @CommandLine.Option(names = "--peer-hosts", description = "Hosts for nodes, input one (all the peers use the same host) or peer-size(comma division)",
@@ -63,11 +70,11 @@ class InitConfig implements Runnable {
     String[] peerHosts;
 
     @CommandLine.Option(names = "--peer-manage-ports", description = "Ports for node manage server, input one (all the peers use the same manage port) or peer-size(comma division)",
-            defaultValue = "7080,7081,7082,7083", split = ",")
+            defaultValue = "7080", split = ",")
     int[] peerManagePorts;
 
     @CommandLine.Option(names = "--peer-consensus-ports", description = "Ports for node consensus server, input one (all the peers use the same consensus port) or peer-size(comma division)",
-            defaultValue = "10080,10082,10084,10086", split = ",")
+            defaultValue = "10080", split = ",")
     int[] peerConsensusPorts;
 
     @CommandLine.Option(names = "--gw-port", description = "Port for gateway server", defaultValue = "8080")
@@ -94,6 +101,10 @@ class InitConfig implements Runnable {
     @Override
     public void run() {
         try {
+            if (consensus.getMinimalNodeSize() > peerSize) {
+                System.err.printf("consensus %s minimal peer size is %d\n", consensus.name(), consensus.getMinimalNodeSize());
+                return;
+            }
             File out = new File(output);
             if (!out.exists()) {
                 out.mkdirs();
@@ -156,18 +167,21 @@ class InitConfig implements Runnable {
             // 解压并配置peer节点
             String[] pubkeys = new String[peerSize];
             String[] privkeys = new String[peerSize];
+            String[] peerDirs = new String[peerSize];
+            String[] raftDirs = new String[peerSize];
             String base58pwd = KeyGenUtils.encodePasswordAsBase58(password);
             for (int i = 0; i < peerSize; i++) {
-                String peerDir = out.getAbsolutePath() + File.separator + "peer" + i;
+                peerDirs[i] = out.getAbsolutePath() + File.separator + "peer" + i;
+                raftDirs[i] = peerDirs[i] + File.separator + "raft";
                 // 解压
-                unzipFile(new File(peerZip), peerDir);
+                unzipFile(new File(peerZip), peerDirs[i]);
                 // 生成公私钥
                 AsymmetricKeypair keypair = Crypto.getSignatureFunction(algorithm.toUpperCase()).generateKeypair();
                 String pubkey = KeyGenUtils.encodePubKey(keypair.getPubKey());
                 pubkeys[i] = pubkey;
                 String privkey = KeyGenUtils.encodePrivKey(keypair.getPrivKey(), base58pwd);
                 privkeys[i] = privkey;
-                String keysDir = peerDir + File.separator + "config" + File.separator + "keys";
+                String keysDir = peerDirs[i] + File.separator + "config" + File.separator + "keys";
                 File keys = new File(keysDir);
                 if (!keys.exists()) {
                     keys.mkdirs();
@@ -176,29 +190,43 @@ class InitConfig implements Runnable {
                 FileUtils.writeText(privkey, new File(keysDir + File.separator + i + ".priv"));
                 FileUtils.writeText(base58pwd, new File(keysDir + File.separator + i + ".pwd"));
 
-                // 配置 bftsmart.config
-                configBftsmart(peerDir + File.separator + "config" + File.separator + "init" + File.separator + "bftsmart.config",
-                        hostsForPeer, portsForConsensus);
+            }
+            for (int i = 0; i < peerSize; i++) {
+                switch (consensus) {
+                    case RAFT:
+                        // 配置 raft.config
+                        configRaft(peerDirs[i], hostsForPeer, portsForConsensus);
+                        break;
+                    case MQ:
+                        // 配置 mq.config
+                        configMQ(peerDirs[i], rabbit, hostsForPeer, pubkeys);
+                        break;
+                    case BFTSMART:
+                        // 配置 bftsmart.config
+                        configBftsmart(peerDirs[i], hostsForPeer, portsForConsensus);
+                        break;
+                    default:
+                        System.err.println("invalid consensus type");
+                        return;
+                }
                 // 配置 local.conf
-                configLocal(peerDir + File.separator + "config" + File.separator + "init" + File.separator + "local.conf",
-                        i, pubkey, privkey, base58pwd, "rocksdb://" + peerDir + File.separator + ledgerName + "-db");
+                configLocal(peerDirs[i], i, pubkeys[i], privkeys[i], base58pwd);
                 // 配置 peer-startup.sh
-                configPeerStartup(peerDir + File.separator + "bin" + File.separator + "peer-startup.sh", portsForManage[i]);
+                configPeerStartup(peerDirs[i] + File.separator + "bin" + File.separator + "peer-startup.sh", portsForManage[i]);
             }
             String ledgerSeed = UUID.randomUUID().toString() + UUID.randomUUID().toString();
             String ledgerTime = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSSZ").format(new Date());
             for (int i = 0; i < peerSize; i++) {
                 String peerDir = out.getAbsolutePath() + File.separator + "peer" + i;
                 // 配置 ledger.init
-                configLedgerInit(peerDir + File.separator + "config" + File.separator + "init" + File.separator + "ledger.init",
-                        ledgerSeed, ledgerName, ledgerTime, pubkeys, hostsForInit, portsForInit);
+                configLedgerInit(peerDir, ledgerSeed, ledgerName, ledgerTime, pubkeys, hostsForInit, portsForInit);
             }
 
             String gwDir = out.getAbsolutePath() + File.separator + "gw";
             // 解压网关节点
             unzipFile(new File(gwZip), gwDir);
             // 配置网关节点 gateway.conf
-            configGateway(gwDir + File.separator + "config" + File.separator + "gateway.conf", gwPort, hostsForPeer[0], portsForManage[0], pubkeys[0], privkeys[0], base58pwd);
+            configGateway(gwDir, gwPort, hostsForPeer[0], portsForManage[0], pubkeys[0], privkeys[0], base58pwd);
 
             System.out.println("INIT CONFIGS FOR LEDGER INITIALIZATION SUCCESS: \n");
             String initializerAddresses = "";
@@ -228,11 +256,13 @@ class InitConfig implements Runnable {
      * @param output
      */
     private void unzipFile(File source, String output) throws ZipException {
+        FileUtils.makeDirectory(output);
         ZipFile zipFile = new ZipFile(source);
         zipFile.extractAll(output);
     }
 
-    private void configBftsmart(String file, String[] peerHosts, int[] peerPorts) {
+    private void configBftsmart(String peerDir, String[] peerHosts, int[] peerPorts) {
+        String file = peerDir + File.separator + "config" + File.separator + "init" + File.separator + "bftsmart.config";
         StringBuilder sb = new StringBuilder();
         sb.append("############################################\n" +
                 "###### #Consensus Participants ######\n" +
@@ -366,10 +396,85 @@ class InitConfig implements Runnable {
                 "#view.storage.handler=bftsmart.reconfiguration.views.DefaultViewStorage");
         FileUtils.deleteFile(file);
         FileUtils.writeText(sb.toString(), new File(file));
-
     }
 
-    private void configLedgerInit(String file, String ledgerSeed, String ledgerName, String ledgerTime, String[] pubkeys, String[] initHosts, int[] initPorts) {
+    private void configRaft(String peerDir, String[] peerHosts, int[] portsForConsensus) {
+        String file = peerDir + File.separator + "config" + File.separator + "init" + File.separator + "raft.config";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < peerHosts.length; i++) {
+            sb.append("system.server." + i + ".network.host=" + peerHosts[i] + "\n" +
+                    "system.server." + i + ".network.port=" + portsForConsensus[i] + "\n" +
+                    "system.server." + i + ".network.secure=false\n");
+        }
+        sb.append("\nsystem.server.block.max.num=100\n" +
+                "system.server.block.max.bytes=4194304\n" +
+                "\n" +
+                "system.server.election.timeout=5000\n" +
+                "system.server.snapshot.interval=1800\n" +
+                "\n" +
+                "system.client.configuration.refresh.interval=60000\n" +
+                "\n" +
+                "system.server.rpc.connect.timeout=10000\n" +
+                "system.server.rpc.default.timeout=10000\n" +
+                "system.server.rpc.snapshot.timeout=300000\n" +
+                "system.server.rpc.request.timeout=120000\n" +
+                "\n" +
+                "system.raft.maxByteCountPerRpc=131072\n" +
+                "system.raft.maxEntriesSize=1024\n" +
+                "system.raft.maxBodySize=524288\n" +
+                "system.raft.maxAppendBufferSize=262144\n" +
+                "system.raft.maxElectionDelayMs=1000\n" +
+                "system.raft.electionHeartbeatFactor=5\n" +
+                "system.raft.applyBatch=32\n" +
+                "system.raft.sync=true\n" +
+                "system.raft.syncMeta=false\n" +
+                "system.raft.disruptorBufferSize=16384\n" +
+                "system.raft.replicatorPipeline=true\n" +
+                "system.raft.maxReplicatorInflightMsgs=256\n");
+        FileUtils.deleteFile(file);
+        FileUtils.writeText(sb.toString(), new File(file));
+    }
+
+    private void configMQ(String peerDir, String rabbit, String[] peerHosts, String[] peerPubs) {
+        String file = peerDir + File.separator + "config" + File.separator + "init" + File.separator + "mq.config";
+        StringBuilder sb = new StringBuilder();
+        sb.append("# MQ连接地址，格式：{MQ类型}://{IP}:{PORT}\n" +
+                "system.msg.queue.server=amqp://" + rabbit + "\n" +
+                "\n" +
+                "# 当前账本交易发送队列主题（不同账本需不同主题）\n" +
+                "system.msg.queue.topic.tx=tx\n" +
+                "\n" +
+                "# 当前账本结块消息应答队列主题\n" +
+                "system.msg.queue.topic.tx-result=tx-result\n" +
+                "\n" +
+                "# 当前账本普通消息主题\n" +
+                "system.msg.queue.topic.msg=msg\n" +
+                "\n" +
+                "# 当前账本普通消息主题\n" +
+                "system.msg.queue.topic.msg-result=msg-result\n" +
+                "\n" +
+                "# 当前账本区块信息主题\n" +
+                "system.msg.queue.topic.block=block\n" +
+                "\n" +
+                "# 当前账本结块最大交易数\n" +
+                "system.msg.queue.block.txsize=1000\n" +
+                "\n" +
+                "# 当前账本结块最大时长（单位：毫秒）\n" +
+                "system.msg.queue.block.maxdelay=10\n" +
+                "\n" +
+                "# 当前账本节点总数\n" +
+                "system.servers.num=" + peerHosts.length + "\n" +
+                "\n" +
+                "# 当前账本对应节点的公钥信息列表\n");
+        for (int i = 0; i < peerHosts.length; i++) {
+            sb.append("system.server." + i + ".pubkey=" + peerPubs[i] + "\n");
+        }
+        FileUtils.deleteFile(file);
+        FileUtils.writeText(sb.toString(), new File(file));
+    }
+
+    private void configLedgerInit(String peerDir, String ledgerSeed, String ledgerName, String ledgerTime, String[] pubkeys, String[] initHosts, int[] initPorts) {
+        String file = peerDir + File.separator + "config" + File.separator + "init" + File.separator + "ledger.init";
         StringBuilder sb = new StringBuilder("#账本的种子；一段16进制字符，最长可以包含64个字符；可以用字符“-”分隔，以便更容易读取；\n" +
                 "ledger.seed=" + ledgerSeed + "\n" +
                 "\n" +
@@ -429,10 +534,14 @@ class InitConfig implements Runnable {
                 "\n" +
                 "#-----------------------------------------------\n" +
                 "#共识服务提供者；必须；\n" +
-                "consensus.service-provider=com.jd.blockchain.consensus.bftsmart.BftsmartConsensusProvider\n" +
+                "consensus.service-provider=" + consensus.getProvider() +
                 "\n" +
                 "#共识服务的参数配置；推荐使用绝对路径；必须；\n" +
-                "consensus.conf=" + new File(file).getParentFile().getAbsolutePath() + File.separator + "bftsmart.config\n" +
+                "consensus.conf=" + new File(file).getParentFile().getAbsolutePath() + File.separator +
+                (consensus.equals(ConsensusTypeEnum.MQ) ? "mq.config" :
+                        (consensus.equals(ConsensusTypeEnum.RAFT) ? "raft.config" :
+                                "bftsmart.config")
+                ) +
                 "\n" +
                 "#密码服务提供者列表，以英文逗点“,”分隔；必须；\n" +
                 "crypto.service-providers=com.jd.blockchain.crypto.service.classic.ClassicCryptoService, \\\n" +
@@ -474,45 +583,41 @@ class InitConfig implements Runnable {
         }
     }
 
-    private void configLocal(String file, int i, String pubkey, String privkey, String pwd, String dbUri) {
+    private void configLocal(String peerDir, int i, String pubkey, String privkey, String pwd) {
+        String file = peerDir + File.separator + "config" + File.separator + "init" + File.separator + "local.conf";
         FileUtils.deleteFile(file);
         FileUtils.writeText("#当前参与方的 id，与ledger.init文件中cons_parti.id一致，默认从0开始\n" +
-                "local.parti.id=" + i + "\n" +
-                "\n" +
-                "#当前参与方的公钥，用于非证书模式\n" +
-                "local.parti.pubkey=" + pubkey + "\n" +
-                "#当前参与方的证书信息，用于证书模式\n" +
-                "local.parti.ca-path=\n" +
-                "\n" +
-                "#当前参与方的私钥（密文编码）\n" +
-                "local.parti.privkey=" + privkey + "\n" +
-                "#当前参与方的私钥文件，PEM格式,用于证书模式\n" +
-                "local.parti.privkey-path=\n" +
-                "\n" +
-                "#当前参与方的私钥解密密钥(原始口令的一次哈希，Base58格式)，如果不设置，则启动过程中需要从控制台输入;\n" +
-                "local.parti.pwd=" + pwd + "\n" +
-                "\n" +
-                "#当前参与方的共识服务TLS配置\n" +
-                "local.parti.ssl.key-store=\n" +
-                "local.parti.ssl.key-store-type=\n" +
-                "local.parti.ssl.key-alias=\n" +
-                "local.parti.ssl.key-store-password=\n" +
-                "local.parti.ssl.trust-store=\n" +
-                "local.parti.ssl.trust-store-password=\n" +
-                "local.parti.ssl.trust-store-type=\n" +
-                "\n" +
-                "#账本初始化完成后生成的\"账本绑定配置文件\"的输出目录\n" +
-                "#推荐使用绝对路径，相对路径以当前文件(local.conf）所在目录为基准\n" +
-                "ledger.binding.out=../\n" +
-                "\n" +
-                "#账本数据库的连接字符\n" +
-                "#rocksdb数据库连接格式：rocksdb://{path}，例如：rocksdb:///export/App08/peer/rocks.db/rocksdb0.db\n" +
-                "#redis数据库连接格式：redis://{ip}:{prot}/{db}，例如：redis://127.0.0.1:6379/0\n" +
-                "#kvdb数据库连接格式：kvdb://{ip}:{prot}/{db}，例如：kvdb://127.0.0.1:7078/test\n" +
-                "ledger.db.uri=" + dbUri + "\n" +
-                "\n" +
-                "#账本数据库的连接口令\n" +
-                "ledger.db.pwd=", new File(file));
+                        "local.parti.id=" + i + "\n" +
+                        "\n" +
+                        "#当前参与方的公钥，用于非证书模式\n" +
+                        "local.parti.pubkey=" + pubkey + "\n" +
+                        "#当前参与方的证书信息，用于证书模式\n" +
+                        "local.parti.ca-path=\n" +
+                        "\n" +
+                        "#当前参与方的私钥（密文编码）\n" +
+                        "local.parti.privkey=" + privkey + "\n" +
+                        "#当前参与方的私钥文件，PEM格式,用于证书模式\n" +
+                        "local.parti.privkey-path=\n" +
+                        "\n" +
+                        "#当前参与方的私钥解密密钥(原始口令的一次哈希，Base58格式)，如果不设置，则启动过程中需要从控制台输入;\n" +
+                        "local.parti.pwd=" + pwd + "\n" +
+                        "\n" +
+                        "#账本初始化完成后生成的\"账本绑定配置文件\"的输出目录\n" +
+                        "#推荐使用绝对路径，相对路径以当前文件(local.conf）所在目录为基准\n" +
+                        "ledger.binding.out=../\n" +
+                        "\n" +
+                        "#账本数据库的连接字符\n" +
+                        "#rocksdb数据库连接格式：rocksdb://{path}，例如：rocksdb:///export/App08/peer/rocks.db/rocksdb0.db\n" +
+                        "#redis数据库连接格式：redis://{ip}:{prot}/{db}，例如：redis://127.0.0.1:6379/0\n" +
+                        "#kvdb数据库连接格式：kvdb://{ip}:{prot}/{db}，例如：kvdb://127.0.0.1:7078/test\n" +
+                        "ledger.db.uri=" + ("rocksdb://" + peerDir + File.separator + ledgerName + "-db") + "\n" +
+                        "\n" +
+                        "#账本数据库的连接口令\n" +
+                        "ledger.db.pwd=\n" +
+                        "\n" +
+                        (consensus.equals(ConsensusTypeEnum.RAFT) ?
+                                ("#Raft运行时数据路径\n" + "extra.properties.raft.path=" + peerDir + File.separator + "raft") : ""),
+                new File(file));
     }
 
     private void configPeerStartup(String file, int peerManagePort) {
@@ -564,8 +669,19 @@ class InitConfig implements Runnable {
                 "#application-peer.properties完整路径\n" +
                 "SPRING_CONFIG=$CONFIG_PATH/application-peer.properties\n" +
                 "\n" +
+                "JDK_VERSION=$(java -version 2>&1 | sed '1!d' | sed -e 's/\"//g' | awk '{print $3}')\n" +
+                "if [[ $JDK_VERSION == 1.8.* ]]; then\n" +
+                "  opens=\"\"\n" +
+                "else\n" +
+                "  opens=\"--add-opens java.base/java.lang=ALL-UNNAMED\"\n" +
+                "  opens=$opens\" --add-opens java.base/java.util=ALL-UNNAMED\"\n" +
+                "  opens=$opens\" --add-opens java.base/java.net=ALL-UNNAMED\"\n" +
+                "  opens=$opens\" --add-opens java.base/sun.security.x509=ALL-UNNAMED\"\n" +
+                "  opens=$opens\" --add-opens java.base/sun.security.util=ALL-UNNAMED\"\n" +
+                "fi\n" +
+                "\n" +
                 "#定义程序启动的参数\n" +
-                "JAVA_OPTS=\"-jar -server -Xms2048m -Xmx2048m -Djdchain.log=$APP_HOME/logs -Dlog4j.configurationFile=file:$APP_HOME/config/log4j2-peer.xml\"\n" +
+                "JAVA_OPTS=\"-jar -server -Xms2048m -Xmx2048m $opens -Djdchain.log=$APP_HOME/logs -Dlog4j.configurationFile=file:$APP_HOME/config/log4j2-peer.xml\"\n" +
                 "\n" +
                 "#APP具体相关命令\n" +
                 "APP_CMD=$APP_SYSTEM_PATH/$APP_JAR\" -home=\"$APP_HOME\" -c \"$LEDGER_BINDING_CONFIG\" -p \"$WEB_PORT\" -sp \"$SPRING_CONFIG\n" +
@@ -639,7 +755,8 @@ class InitConfig implements Runnable {
                 "fi", new File(file));
     }
 
-    private void configGateway(String file, int gwPort, String peerHost, int peerPort, String pubkey, String privkey, String pwd) {
+    private void configGateway(String gwDir, int gwPort, String peerHost, int peerPort, String pubkey, String privkey, String pwd) {
+        String file = gwDir + File.separator + "config" + File.separator + "gateway.conf";
         FileUtils.deleteFile(file);
         FileUtils.writeText("#网关的HTTP服务地址；\n" +
                 "http.host=0.0.0.0\n" +
@@ -665,13 +782,18 @@ class InitConfig implements Runnable {
                 "#账本节点拓扑信息落盘，默认false\n" +
                 "topology.store=false\n" +
                 "\n" +
-                "#是否开启共识节点自动感知，默认true\n" +
-                "topology.aware=true\n" +
+                "#是否开启共识节点自动感知，默认true. MQ不支持动态感知\n" +
+                "topology.aware=" + (consensus.equals(ConsensusTypeEnum.MQ) ? "false" : "true") + "\n" +
+                "#共识节点自动感知间隔（毫秒），0及负值表示仅感知一次。对于不存在节点变更的场景可只感知一次\n" +
+                "topology.aware.interval=0\n" +
+                "\n" +
+                "# 节点连接心跳（毫秒），及时感知连接有效性，0及负值表示关闭\n" +
+                "peer.connection.ping=3000\n" +
+                "# 节点连接认证（毫秒），及时感知连接合法性，0及负值表示关闭。对于不存在权限变更的场景可关闭\n" +
+                "peer.connection.auth=0" +
                 "\n" +
                 "#共识节点的服务提供解析器\n" +
-                "#BftSmart共识Provider：com.jd.blockchain.consensus.bftsmart.BftsmartConsensusProvider\n" +
-                "#简单消息共识Provider：com.jd.blockchain.consensus.mq.MsgQueueConsensusProvider\n" +
-                "peer.providers=com.jd.blockchain.consensus.bftsmart.BftsmartConsensusProvider\n" +
+                "peer.providers=" + consensus.getProvider() +
                 "\n" +
                 "#数据检索服务对应URL，格式：http://{ip}:{port}，例如：http://127.0.0.1:10001\n" +
                 "#若该值不配置或配置不正确，则浏览器模糊查询部分无法正常显示\n" +

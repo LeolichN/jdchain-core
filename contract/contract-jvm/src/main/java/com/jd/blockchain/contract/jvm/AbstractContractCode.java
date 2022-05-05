@@ -1,111 +1,149 @@
 package com.jd.blockchain.contract.jvm;
 
-import java.lang.reflect.Method;
-
-import com.jd.blockchain.ledger.ContractExecuteException;
-import com.jd.blockchain.ledger.LedgerException;
+import com.jd.blockchain.contract.ContractEventContext;
+import com.jd.blockchain.contract.engine.ContractCode;
+import com.jd.blockchain.ledger.*;
+import com.jd.blockchain.runtime.RuntimeContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.util.ReflectionUtils;
-
-import com.jd.blockchain.contract.ContractEventContext;
-import com.jd.blockchain.contract.ContractException;
-import com.jd.blockchain.contract.EventProcessingAware;
-import com.jd.blockchain.contract.engine.ContractCode;
-import com.jd.blockchain.ledger.BytesValue;
-import com.jd.blockchain.ledger.BytesValueEncoding;
-import com.jd.blockchain.ledger.BytesValueList;
-
 import utils.Bytes;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.*;
+
 /**
- * @author huanghaiquan
- *
+ * 可执行合约代码
+ * 非线程安全
  */
 public abstract class AbstractContractCode implements ContractCode {
-	private static final Logger LOGGER = LoggerFactory.getLogger(AbstractContractCode.class);
-	private Bytes address;
-	private long version;
+    protected static final Logger LOGGER = LoggerFactory.getLogger(AbstractContractCode.class);
+    private static Map<String, Integer> contractRunningDepth = new HashMap<>();
 
-	private ContractDefinition contractDefinition;
+    private Bytes address;
+    private long version;
 
-	public AbstractContractCode(Bytes address, long version, ContractDefinition contractDefinition) {
-		this.address = address;
-		this.version = version;
-		this.contractDefinition = contractDefinition;
-	}
+    public AbstractContractCode(Bytes address, long version) {
+        this.address = address;
+        this.version = version;
+    }
 
-	public ContractDefinition getContractDefinition() {
-		return contractDefinition;
-	}
+    @Override
+    public Bytes getAddress() {
+        return address;
+    }
 
-	@Override
-	public Bytes getAddress() {
-		return address;
-	}
+    @Override
+    public long getVersion() {
+        return version;
+    }
 
-	@Override
-	public long getVersion() {
-		return version;
-	}
+    @Override
+    public BytesValue processEvent(ContractEventContext eventContext) {
+        String ledger = eventContext.getCurrentLedgerHash().toString();
+        Integer depth = contractRunningDepth.get(ledger);
+        try {
+            if (null == depth) {
+                depth = 0;
+            }
+            contractRunningDepth.put(ledger, ++depth);
+            // 合约调用栈最大深度检查，超过则回滚交易
+            if (depth > eventContext.getContractRuntimeConfig().getMaxStackDepth()) {
+                throw new ContractExecuteException(String.format("Size of contract event stack is greater than %d", eventContext.getContractRuntimeConfig().getMaxStackDepth()));
+            }
+            if (depth == 1) {
+                return timeLimitedInvoke(eventContext);
+            } else {
+                return invoke(eventContext);
+            }
+        } finally {
+            contractRunningDepth.put(ledger, --depth);
+        }
+    }
 
-	@Override
-	public BytesValue processEvent(ContractEventContext eventContext) {
-		EventProcessingAware evtProcAwire = null;
-		Object retn = null;
-		Method handleMethod = null;
-		LedgerException error = null;
-		try {
-			// 执行预处理;
-			Object contractInstance = getContractInstance();
-			if (contractInstance instanceof EventProcessingAware) {
-				evtProcAwire = (EventProcessingAware) contractInstance;
-			}
+    private BytesValue timeLimitedInvoke(ContractEventContext eventContext) {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            SecurityPolicy usersPolicy = SecurityContext.getContextUsersPolicy();
+            Future<Object> future = executor.submit(() -> {
+                SecurityContext.setContextUsersPolicy(usersPolicy);
+                return invoke(eventContext);
+            });
+            return (BytesValue) future.get(eventContext.getContractRuntimeConfig().getTimeout(), TimeUnit.MILLISECONDS);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof LedgerException) {
+                throw (LedgerException) e.getCause();
+            }
+            throw new ContractExecuteException("Error occurred while get contract result ", e);
+        } catch (InterruptedException | TimeoutException e) {
+            throw new BlockRollbackException(TransactionState.SYSTEM_ERROR, "Contract Interrupted or Timeout", e);
+        } catch (Exception e) {
+            throw new BlockRollbackException(TransactionState.SYSTEM_ERROR, "Contract Interrupted or Timeout", e);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
 
-			if (evtProcAwire != null) {
-				evtProcAwire.beforeEvent(eventContext);
-			}
+    private BytesValue invoke(ContractEventContext eventContext) {
+        Object retn = null;
+        LedgerException error = null;
+        Object contractInstance = null;
+        try {
+            try {
+                // 生成合约类对象
+                contractInstance = getContractInstance();
+                // 开启安全管理器
+                enableSecurityManager();
 
-			// 反序列化参数；
-			handleMethod = contractDefinition.getType().getHandleMethod(eventContext.getEvent());
+                // 执行预处理;
+                beforeEvent(contractInstance, eventContext);
 
-			if (handleMethod == null) {
-				throw new ContractException(
-						String.format("Contract[%s:%s] has no handle method to handle event[%s]!", address.toString(),
-								contractDefinition.getType().getName(), eventContext.getEvent()));
-			}
-			
-			BytesValueList bytesValues = eventContext.getArgs();
-			Object[] args = BytesValueEncoding.decode(bytesValues, handleMethod.getParameterTypes());
-			
-			retn = ReflectionUtils.invokeMethod(handleMethod, contractInstance, args);
-			
-		} catch (LedgerException e) {
-			error = e;
-		} catch (Throwable e) {
-			String errorMessage = String.format("Error occurred while processing event[%s] of contract[%s]! --%s",
-					eventContext.getEvent(), address.toString(), e.getMessage());
-			error = new ContractExecuteException(errorMessage, e);
-		}
+                // 合约方法执行
+                retn = doProcessEvent(contractInstance, eventContext);
+            } catch (Throwable e) {
+                if (e instanceof LedgerException) {
+                    error = (LedgerException) e;
+                } else if (e.getCause() instanceof LedgerException) {
+                    error = (LedgerException) e.getCause();
+                } else {
+                    String errorMessage = String.format("Error occurred while processing event[%s] of contract[%s]!", eventContext.getEvent(), address.toString());
+                    error = new ContractExecuteException(errorMessage, e);
+                }
+            }
 
-		if (evtProcAwire != null) {
-			try {
-				evtProcAwire.postEvent(eventContext, error);
-			} catch (Throwable e) {
-				String errorMessage = "Error occurred while posting contract event! --" + e.getMessage();
-				LOGGER.error(errorMessage, e);
-				throw new ContractExecuteException(errorMessage);
-			}
-		}
-		if (error != null) {
-			// Rethrow error;
-			throw error;
-		}
+            try {
+                // 执行后处理
+                postEvent(contractInstance, eventContext, error);
+            } catch (Throwable e) {
+                if (e instanceof LedgerException) {
+                    error = (LedgerException) e;
+                } else {
+                    String errorMessage = String.format("Error occurred while posting event[%s] of contract[%s]!", eventContext.getEvent(), address.toString());
+                    error = new ContractExecuteException(errorMessage, e);
+                }
+            }
+            if (error != null) {
+                throw error;
+            }
+            return (BytesValue) retn;
+        } finally {
+            disableSecurityManager();
+        }
+    }
 
-		BytesValue retnBytes = BytesValueEncoding.encodeSingle(retn, handleMethod.getReturnType());
-		return retnBytes;
-	}
+    protected void enableSecurityManager() {
+        RuntimeContext.enableSecurityManager();
+    }
 
-	protected abstract Object getContractInstance();
+    protected void disableSecurityManager() {
+        RuntimeContext.disableSecurityManager();
+    }
 
+    protected abstract Object getContractInstance();
+
+    protected abstract void beforeEvent(Object contractInstance, ContractEventContext eventContext);
+
+    protected abstract BytesValue doProcessEvent(Object contractInstance, ContractEventContext eventContext) throws Exception;
+
+    protected abstract void postEvent(Object contractInstance, ContractEventContext eventContext, LedgerException error);
 }

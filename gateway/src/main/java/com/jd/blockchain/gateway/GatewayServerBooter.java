@@ -10,6 +10,8 @@ import com.jd.blockchain.ca.CertificateRole;
 import com.jd.blockchain.ca.CertificateUtils;
 import com.jd.blockchain.gateway.service.LedgersManager;
 import com.jd.blockchain.gateway.service.topology.LedgerPeersTopology;
+import com.jd.blockchain.ledger.ConsensusReconfigOperation;
+import com.jd.blockchain.ledger.HashAlgorithmUpdateOperation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.misc.Signal;
@@ -279,6 +281,8 @@ public class GatewayServerBooter implements SignalHandler {
 		DataContractRegistry.register(EventPublishOperation.class);
 		DataContractRegistry.register(EventPublishOperation.EventEntry.class);
 		DataContractRegistry.register(ConsensusSettingsUpdateOperation.class);
+		DataContractRegistry.register(ConsensusReconfigOperation.class);
+		DataContractRegistry.register(HashAlgorithmUpdateOperation.class);
 
 		DataContractRegistry.register(GatewayAuthRequest.class);
 		DataContractRegistry.register(ActionRequest.class);

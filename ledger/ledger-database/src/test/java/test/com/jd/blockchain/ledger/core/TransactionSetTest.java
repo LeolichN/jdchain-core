@@ -8,6 +8,8 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.Random;
 
+import com.jd.blockchain.ledger.ConsensusReconfigOperation;
+import com.jd.blockchain.ledger.HashAlgorithmUpdateOperation;
 import org.junit.Test;
 
 import com.jd.binaryproto.DataContractRegistry;
@@ -58,6 +60,8 @@ public class TransactionSetTest {
 		DataContractRegistry.register(ParticipantRegisterOperation.class);
 		DataContractRegistry.register(ParticipantStateUpdateOperation.class);
 		DataContractRegistry.register(ConsensusSettingsUpdateOperation.class);
+		DataContractRegistry.register(ConsensusReconfigOperation.class);
+		DataContractRegistry.register(HashAlgorithmUpdateOperation.class);
 	}
 
 	@Test

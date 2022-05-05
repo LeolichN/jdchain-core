@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>com.jd.blockchain</groupId>
 		<artifactId>consensus-core</artifactId>
-		<version>1.6.2.RELEASE</version>
+		<version>1.6.3.RELEASE</version>
 	</parent>
 	<artifactId>consensus-bftsmart</artifactId>
 
@@ -28,6 +28,10 @@
 		<dependency>
 			<groupId>com.jd.utils</groupId>
 			<artifactId>utils-common</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.jd.utils</groupId>
+			<artifactId>utils-sm-tls</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.commons</groupId>
@@ -60,6 +64,7 @@
 			<version>${framework.version}</version>
 			<scope>test</scope>
 		</dependency>
+
 	</dependencies>
 
 
