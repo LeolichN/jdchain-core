@@ -1,23 +1,20 @@
 package com.jd.blockchain.ledger.core.handles;
 
-import com.jd.blockchain.ledger.DataAccountDoesNotExistException;
-import com.jd.blockchain.ledger.DataAccountKVSetOperation;
+import com.jd.blockchain.ledger.*;
 import com.jd.blockchain.ledger.DataAccountKVSetOperation.KVWriteEntry;
-import com.jd.blockchain.ledger.DataPermissionType;
-import com.jd.blockchain.ledger.DataVersionConflictException;
-import com.jd.blockchain.ledger.LedgerPermission;
-import com.jd.blockchain.ledger.TypedValue;
 import com.jd.blockchain.ledger.core.DataAccount;
 import com.jd.blockchain.ledger.core.LedgerQuery;
 import com.jd.blockchain.ledger.core.LedgerTransactionContext;
-import com.jd.blockchain.ledger.MultiIDsPolicy;
 import com.jd.blockchain.ledger.core.OperationHandleContext;
-import com.jd.blockchain.ledger.SecurityContext;
-import com.jd.blockchain.ledger.SecurityPolicy;
 import com.jd.blockchain.ledger.core.TransactionRequestExtension;
 import com.jd.blockchain.ledger.core.EventManager;
+import com.jd.blockchain.transaction.DataAccountChameleonOnceCheck;
+import utils.Bytes;
+import utils.io.BytesUtils;
 
 public class DataAccountKVSetOperationHandle extends AbstractLedgerOperationHandle<DataAccountKVSetOperation> {
+
+	private static final String DATA_ACCOUNT_HASH_ONCE_KEY = "DATA_ACCOUNT_HASH_ONCE_KEY";
 
 	public DataAccountKVSetOperationHandle() {
 		super(DataAccountKVSetOperation.class);
@@ -42,10 +39,30 @@ public class DataAccountKVSetOperationHandle extends AbstractLedgerOperationHand
 
 		KVWriteEntry[] writeSet = kvWriteOp.getWriteSet();
 		long v = -1L;
+		byte[] onceHashData = null;
+		DataAccountChameleonOnceCheck chameleonOnceCheck = null;
 		for (KVWriteEntry kvw : writeSet) {
 			v = account.getDataset().setValue(kvw.getKey(), TypedValue.wrap(kvw.getValue()), kvw.getExpectedVersion());
 			if (v < 0) {
 				throw new DataVersionConflictException();
+			}
+			if(kvw.chameleonHash()){
+				if(onceHashData == null){
+					onceHashData = kvw.getValue().getBytes().toBytes();
+				}else{
+					onceHashData = BytesUtils.concat(onceHashData,kvw.getValue().getBytes().toBytes());
+				}
+				if(kvw.hashChameleonOnce() != null && chameleonOnceCheck == null){
+					chameleonOnceCheck = kvw.hashChameleonOnce();
+				}
+			}
+		}
+		if(chameleonOnceCheck != null && onceHashData != null){
+			BytesValue hashResult = chameleonOnceCheck.hashDataOnce(onceHashData,account.getPubKey().getRawKeyBytes());
+			if(account.getDataset().getValue(TypedValue.wrap(hashResult).stringValue()) != null){
+				throw new DataVersionConflictException();
+			}else{
+				account.getDataset().setValue(TypedValue.wrap(hashResult).stringValue(),TypedValue.fromBoolean(true));
 			}
 		}
 	}
