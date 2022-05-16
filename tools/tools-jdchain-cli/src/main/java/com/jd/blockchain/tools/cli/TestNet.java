@@ -4,6 +4,7 @@ import com.jd.blockchain.crypto.AsymmetricKeypair;
 import com.jd.blockchain.crypto.Crypto;
 import com.jd.blockchain.crypto.KeyGenUtils;
 import com.jd.blockchain.ledger.ConsensusTypeEnum;
+import com.jd.blockchain.ledger.LedgerDataStructure;
 import net.lingala.zip4j.ZipFile;
 import net.lingala.zip4j.exception.ZipException;
 import picocli.CommandLine;
@@ -53,6 +54,9 @@ class InitConfig implements Runnable {
 
     @CommandLine.Option(names = "--rabbit", description = "RabbitMQ Server address for MQ consensus")
     String rabbit;
+
+    @CommandLine.Option(names = "--data-structure", description = "Ledger Data Struct: MERKLE_TREE,KV.", defaultValue = "MERKLE_TREE")
+    LedgerDataStructure dataStructure;
 
     @CommandLine.Option(names = "--peer-size", description = "Size of peers", defaultValue = "4")
     int peerSize;
@@ -337,7 +341,7 @@ class InitConfig implements Runnable {
                 "system.communication.useSignatures = 0\n" +
                 "\n" +
                 "#Set to 1 if SMaRt should use MAC's, set to 0 if otherwise\n" +
-                "system.communication.useMACs = 1\n" +
+                "system.communication.useMACs = 0\n" +
                 "\n" +
                 "#Set to 1 if SMaRt should use the standard output to display debug messages, set to 0 if otherwise\n" +
                 "system.debug = 0\n" +
@@ -367,7 +371,7 @@ class InitConfig implements Runnable {
                 "\n" +
                 "system.totalordermulticast.log = true\n" +
                 "system.totalordermulticast.log_parallel = false\n" +
-                "system.totalordermulticast.log_to_disk = true\n" +
+                "system.totalordermulticast.log_to_disk = false\n" +
                 "system.totalordermulticast.sync_log = false\n" +
                 "\n" +
                 "#Period at which BFT-SMaRt requests the state to the application (for the state transfer state protocol)\n" +
@@ -393,7 +397,10 @@ class InitConfig implements Runnable {
                 "system.bft = true\n" +
                 "\n" +
                 "#Custom View Storage;\n" +
-                "#view.storage.handler=bftsmart.reconfiguration.views.DefaultViewStorage");
+                "#view.storage.handler=bftsmart.reconfiguration.views.DefaultViewStorage\n" +
+                "\n" +
+                "#block delay;\n" +
+                "system.epoch.delay=" + (dataStructure.equals(LedgerDataStructure.KV) ? 25 : 50));
         FileUtils.deleteFile(file);
         FileUtils.writeText(sb.toString(), new File(file));
     }
@@ -460,7 +467,7 @@ class InitConfig implements Runnable {
                 "system.msg.queue.block.txsize=1000\n" +
                 "\n" +
                 "# 当前账本结块最大时长（单位：毫秒）\n" +
-                "system.msg.queue.block.maxdelay=10\n" +
+                "system.msg.queue.block.maxdelay=1\n" +
                 "\n" +
                 "# 当前账本节点总数\n" +
                 "system.servers.num=" + peerHosts.length + "\n" +
@@ -491,7 +498,7 @@ class InitConfig implements Runnable {
                 "created-time=" + ledgerTime + "\n" +
                 "\n" +
                 "#账本数据底层结构，分为：MERKLE_TREE, KV两种，默认MERKLE_TREE\n" +
-                "ledger.data.structure=MERKLE_TREE\n" +
+                "ledger.data.structure=" + dataStructure + "\n" +
                 "\n" +
                 "#-----------------------------------------------\n" +
                 "# 初始的角色名称列表；可选项；\n" +
@@ -545,7 +552,8 @@ class InitConfig implements Runnable {
                 "\n" +
                 "#密码服务提供者列表，以英文逗点“,”分隔；必须；\n" +
                 "crypto.service-providers=com.jd.blockchain.crypto.service.classic.ClassicCryptoService, \\\n" +
-                "com.jd.blockchain.crypto.service.sm.SMCryptoService\n" +
+                "com.jd.blockchain.crypto.service.sm.SMCryptoService, \\\n" +
+                "com.jd.blockchain.crypto.service.adv.AdvCryptoService\n" +
                 "\n" +
                 "#从存储中加载账本数据时，是否校验哈希；可选；\n" +
                 "crypto.verify-hash=true\n" +
@@ -591,13 +599,9 @@ class InitConfig implements Runnable {
                         "\n" +
                         "#当前参与方的公钥，用于非证书模式\n" +
                         "local.parti.pubkey=" + pubkey + "\n" +
-                        "#当前参与方的证书信息，用于证书模式\n" +
-                        "local.parti.ca-path=\n" +
                         "\n" +
                         "#当前参与方的私钥（密文编码）\n" +
                         "local.parti.privkey=" + privkey + "\n" +
-                        "#当前参与方的私钥文件，PEM格式,用于证书模式\n" +
-                        "local.parti.privkey-path=\n" +
                         "\n" +
                         "#当前参与方的私钥解密密钥(原始口令的一次哈希，Base58格式)，如果不设置，则启动过程中需要从控制台输入;\n" +
                         "local.parti.pwd=" + pwd + "\n" +
@@ -789,23 +793,14 @@ class InitConfig implements Runnable {
                 "\n" +
                 "# 节点连接心跳（毫秒），及时感知连接有效性，0及负值表示关闭\n" +
                 "peer.connection.ping=3000\n" +
-                "# 节点连接认证（毫秒），及时感知连接合法性，0及负值表示关闭。对于不存在权限变更的场景可关闭\n" +
+                "# 节点连接认证（毫秒），及时感知连接合法性，0及负值表示关闭。对于不存在账本数量变更、权限变更的场景可关闭\n" +
                 "peer.connection.auth=0" +
                 "\n" +
                 "#共识节点的服务提供解析器\n" +
                 "peer.providers=" + consensus.getProvider() +
                 "\n" +
-                "#数据检索服务对应URL，格式：http://{ip}:{port}，例如：http://127.0.0.1:10001\n" +
-                "#若该值不配置或配置不正确，则浏览器模糊查询部分无法正常显示\n" +
-                "data.retrieval.url=\n" +
-                "schema.retrieval.url=\n" +
-                "\n" +
                 "#默认公钥的内容（Base58编码数据），非CA模式下必填；\n" +
                 "keys.default.pubkey=" + pubkey + "\n" +
-                "#默认网关证书路径（X509,PEM），CA模式下必填；\n" +
-                "keys.default.ca-path=\n" +
-                "#默认私钥的路径；在 pk-path 和 pk 之间必须设置其一；\n" +
-                "keys.default.privkey-path=\n" +
                 "#默认私钥的内容；在 pk-path 和 pk 之间必须设置其一；\n" +
                 "keys.default.privkey=" + privkey + "\n" +
                 "#默认私钥的解码密码；\n" +

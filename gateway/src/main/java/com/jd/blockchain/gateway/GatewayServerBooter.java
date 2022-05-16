@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.misc.Signal;
 import sun.misc.SignalHandler;
+import utils.crypto.sm.GmSSLProvider;
 import utils.net.SSLSecurity;
 import org.apache.commons.io.FileUtils;
 import org.springframework.boot.SpringApplication;

@@ -22,16 +22,15 @@ import utils.Bytes;
 import utils.DataEntry;
 import utils.Mapper;
 import utils.SkippingIterator;
-import utils.Transactional;
 
-public class MerkleAccountSetEditor implements Transactional, MerkleAccountSet<CompositeAccount> {
+public class MerkleAccountSetEditor implements BaseAccountSetEditor {
 
 	private final Bytes keyPrefix;
 
 	/**
 	 * 账户根哈希的数据集；
 	 */
-	private MerkleDataset<Bytes, byte[]> merkleDataset;
+	private BaseDataset<Bytes, byte[]> merkleDataset;
 
 	/**
 	 * The cache of latest version accounts, including accounts getting by querying
@@ -51,18 +50,19 @@ public class MerkleAccountSetEditor implements Transactional, MerkleAccountSet<C
 
 	private AccountAccessPolicy accessPolicy;
 
+	@Override
 	public boolean isReadonly() {
 		return merkleDataset.isReadonly();
 	}
 
 	public MerkleAccountSetEditor(CryptoSetting cryptoSetting, Bytes keyPrefix, ExPolicyKVStorage exStorage,
-			VersioningKVStorage verStorage, AccountAccessPolicy accessPolicy) {
+								  VersioningKVStorage verStorage, AccountAccessPolicy accessPolicy) {
 		this(null, cryptoSetting, keyPrefix, exStorage, verStorage, false, accessPolicy);
 	}
 
 	public MerkleAccountSetEditor(HashDigest rootHash, CryptoSetting cryptoSetting, Bytes keyPrefix,
-			ExPolicyKVStorage exStorage, VersioningKVStorage verStorage, boolean readonly,
-			AccountAccessPolicy accessPolicy) {
+								  ExPolicyKVStorage exStorage, VersioningKVStorage verStorage, boolean readonly,
+								  AccountAccessPolicy accessPolicy) {
 		this.keyPrefix = keyPrefix;
 		this.cryptoSetting = cryptoSetting;
 		this.baseExStorage = exStorage;
@@ -99,7 +99,7 @@ public class MerkleAccountSetEditor implements Transactional, MerkleAccountSet<C
 	@Override
 	public SkippingIterator<BlockchainIdentity> identityIterator() {
 
-		SkippingIterator<BlockchainIdentity> idIterator = merkleDataset.iterator()
+		SkippingIterator<BlockchainIdentity> idIterator = merkleDataset.idIterator()
 				.iterateAs(new Mapper<DataEntry<Bytes, byte[]>, BlockchainIdentity>() {
 					@Override
 					public BlockchainIdentity from(DataEntry<Bytes, byte[]> source) {
@@ -172,6 +172,7 @@ public class MerkleAccountSetEditor implements Transactional, MerkleAccountSet<C
 	 * @param address
 	 * @return
 	 */
+	@Override
 	public long getVersion(Bytes address) {
 		InnerMerkleAccount acc = latestAccountsCache.get(address);
 		if (acc != null) {
@@ -238,6 +239,7 @@ public class MerkleAccountSetEditor implements Transactional, MerkleAccountSet<C
 		return acc;
 	}
 
+	@Override
 	public CompositeAccount register(Bytes address, PubKey pubKey) {
 		return register(new BlockchainIdentityData(address, pubKey));
 	}
@@ -396,7 +398,7 @@ public class MerkleAccountSetEditor implements Transactional, MerkleAccountSet<C
 	 * @author huanghaiquan
 	 *
 	 */
-	private class InnerMerkleAccount extends ComplecatedMerkleAccount {
+	private class InnerMerkleAccount extends MerkleComplecatedAccount {
 
 		private long version;
 
@@ -458,6 +460,27 @@ public class MerkleAccountSetEditor implements Transactional, MerkleAccountSet<C
 			return dataRoot;
 		}
 
+	}
+
+	@Override
+	public boolean isAddNew() {
+		return false;
+	}
+
+	@Override
+	public void clearCachedIndex() {
+		// do nothing in merkle ledger structure
+	}
+
+	@Override
+	public Map<Bytes, Long> getKvNumCache() {
+		// do nothing in merkle ledger structure
+		return null;
+	}
+
+	@Override
+	public void updatePreBlockHeight(long newBlockHeight) {
+		// do nothing in merkle ledger structure
 	}
 
 }

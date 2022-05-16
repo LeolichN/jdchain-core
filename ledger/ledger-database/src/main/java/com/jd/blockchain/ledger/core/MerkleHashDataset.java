@@ -28,7 +28,7 @@ import utils.SkippingIterator;
  * @author huanghaiquan
  *
  */
-public class MerkleHashDataset implements MerkleDataset<Bytes, byte[]> {
+public class MerkleHashDataset implements BaseDataset<Bytes, byte[]> {
 
 	/**
 	 * 4 MB MaxSize of value;
@@ -36,7 +36,7 @@ public class MerkleHashDataset implements MerkleDataset<Bytes, byte[]> {
 	public static final int MAX_SIZE_OF_VALUE = 8 * 1024 * 1024;
 
 //	public static final Bytes SN_PREFIX = Bytes.fromString("SN" + LedgerConsts.KEY_SEPERATOR);
-	public static final Bytes DATA_PREFIX = Bytes.fromString("KV" + LedgerConsts.KEY_SEPERATOR);
+//	public static final Bytes DATA_PREFIX = Bytes.fromString("KV" + LedgerConsts.KEY_SEPERATOR);
 	public static final Bytes MERKLE_TREE_PREFIX = Bytes.fromString("MKL" + LedgerConsts.KEY_SEPERATOR);
 
 	@SuppressWarnings("unchecked")
@@ -71,7 +71,7 @@ public class MerkleHashDataset implements MerkleDataset<Bytes, byte[]> {
 	 * @param versioningStorage 数据的存储；
 	 */
 	public MerkleHashDataset(CryptoSetting setting, String keyPrefix, ExPolicyKVStorage exPolicyStorage,
-			VersioningKVStorage versioningStorage) {
+							 VersioningKVStorage versioningStorage) {
 		this(setting, Bytes.fromString(keyPrefix), exPolicyStorage, versioningStorage);
 	}
 
@@ -83,7 +83,7 @@ public class MerkleHashDataset implements MerkleDataset<Bytes, byte[]> {
 	 * @param versioningStorage 数据的存储；
 	 */
 	public MerkleHashDataset(CryptoSetting setting, Bytes keyPrefix, ExPolicyKVStorage exPolicyStorage,
-			VersioningKVStorage versioningStorage) {
+							 VersioningKVStorage versioningStorage) {
 		this(null, setting, keyPrefix, exPolicyStorage, versioningStorage, false);
 	}
 
@@ -97,7 +97,7 @@ public class MerkleHashDataset implements MerkleDataset<Bytes, byte[]> {
 	 * @param snGenerator
 	 */
 	public MerkleHashDataset(HashDigest merkleRootHash, CryptoSetting setting, String keyPrefix,
-			ExPolicyKVStorage exPolicyStorage, VersioningKVStorage versioningStorage, boolean readonly) {
+							 ExPolicyKVStorage exPolicyStorage, VersioningKVStorage versioningStorage, boolean readonly) {
 		this(merkleRootHash, setting, Bytes.fromString(keyPrefix), exPolicyStorage, versioningStorage, readonly);
 	}
 
@@ -111,9 +111,10 @@ public class MerkleHashDataset implements MerkleDataset<Bytes, byte[]> {
 	 * @param snGenerator
 	 */
 	public MerkleHashDataset(HashDigest merkleRootHash, CryptoSetting setting, Bytes keyPrefix,
-			ExPolicyKVStorage exPolicyStorage, VersioningKVStorage versioningStorage, boolean readonly) {
+							 ExPolicyKVStorage exPolicyStorage, VersioningKVStorage versioningStorage, boolean readonly) {
 		// 把存储数据值、Merkle节点的 key 分别加入独立的前缀，避免针对 key 的注入攻击；
-		this.dataKeyPrefix = keyPrefix.concat(DATA_PREFIX);
+//		this.dataKeyPrefix = keyPrefix.concat(DATA_PREFIX);
+		this.dataKeyPrefix = keyPrefix;
 		// 缓冲对KV的写入；
 		this.valueStorage = new BufferedKVStorage(Crypto.getHashFunction(setting.getHashAlgorithm()), exPolicyStorage, versioningStorage, false);
 
@@ -165,6 +166,7 @@ public class MerkleHashDataset implements MerkleDataset<Bytes, byte[]> {
 
 	}
 
+	@Override
 	public DataEntry<Bytes, byte[]>[] getDataEntries(long fromIndex, int count) {
 		if (count > LedgerConsts.MAX_LIST_COUNT) {
 			throw new IllegalArgumentException("Count exceed the upper limit[" + LedgerConsts.MAX_LIST_COUNT + "]!");
@@ -373,12 +375,27 @@ public class MerkleHashDataset implements MerkleDataset<Bytes, byte[]> {
 	}
 
 	@Override
-	public SkippingIterator<DataEntry<Bytes, byte[]>> iterator() {
+	public void updatePreBlockHeight(long newBlockHeight) {
+		// do nothing in merkle ledger structure
+	}
+
+	@Override
+	public SkippingIterator<DataEntry<Bytes, byte[]>> idIterator() {
 		return new AscDataInterator(getDataCount());
 	}
 
 	@Override
-	public SkippingIterator<DataEntry<Bytes, byte[]>> iteratorDesc() {
+	public SkippingIterator<DataEntry<Bytes, byte[]>> kvIterator() {
+		return new AscDataInterator(getDataCount());
+	}
+
+	@Override
+	public SkippingIterator<DataEntry<Bytes, byte[]>> idIteratorDesc() {
+		return new DescDataInterator(getDataCount());
+	}
+
+	@Override
+	public SkippingIterator<DataEntry<Bytes, byte[]>> kvIteratorDesc() {
 		return new DescDataInterator(getDataCount());
 	}
 

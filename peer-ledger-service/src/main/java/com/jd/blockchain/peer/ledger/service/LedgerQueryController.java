@@ -3,27 +3,10 @@ package com.jd.blockchain.peer.ledger.service;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.jd.blockchain.ledger.LedgerDataStructure;
-import com.jd.blockchain.ledger.core.ComplecatedSimpleAccount;
-import com.jd.blockchain.ledger.core.ContractAccountSetEditorSimple;
-import com.jd.blockchain.ledger.core.DataAccountSetEditorSimple;
-import com.jd.blockchain.ledger.core.EventAccountSetEditorSimple;
-import com.jd.blockchain.ledger.core.IteratorDataset;
-import com.jd.blockchain.ledger.core.SimpleDatasetImpl;
-import com.jd.blockchain.ledger.core.UserAccountSetEditorSimple;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-
-import com.jd.blockchain.contract.ContractException;
-import com.jd.blockchain.crypto.HashDigest;
 import com.jd.blockchain.ledger.BlockchainIdentity;
 import com.jd.blockchain.ledger.BytesValue;
 import com.jd.blockchain.ledger.ContractInfo;
+import com.jd.blockchain.ledger.CryptoSetting;
 import com.jd.blockchain.ledger.DataAccountInfo;
 import com.jd.blockchain.ledger.Event;
 import com.jd.blockchain.ledger.KVDataVO;
@@ -42,6 +25,17 @@ import com.jd.blockchain.ledger.TypedKVEntry;
 import com.jd.blockchain.ledger.TypedValue;
 import com.jd.blockchain.ledger.UserInfo;
 import com.jd.blockchain.ledger.UserPrivilegeSet;
+import com.jd.blockchain.ledger.core.IteratorDataset;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.jd.blockchain.contract.ContractException;
+import com.jd.blockchain.crypto.HashDigest;
 import com.jd.blockchain.ledger.core.ContractAccountSet;
 import com.jd.blockchain.ledger.core.DataAccount;
 import com.jd.blockchain.ledger.core.DataAccountSet;
@@ -62,7 +56,6 @@ import utils.Bytes;
 import utils.DataEntry;
 import utils.Mapper;
 import utils.SkippingIterator;
-import utils.io.BytesUtils;
 import utils.query.QueryArgs;
 import utils.query.QueryUtils;
 
@@ -119,6 +112,12 @@ public class LedgerQueryController implements BlockchainQueryService {
 		LedgerQuery ledger = ledgerService.getLedger(ledgerHash);
 		LedgerAdminInfo ledgerAdministration = ledger.getAdminInfo();
 		return ledgerAdminInfoDecorator(ledgerAdministration);
+	}
+
+	@RequestMapping(method = RequestMethod.GET, path = GET_LEDGER_SETTINGS_CRYPTO)
+	@Override
+	public CryptoSetting getLedgerCryptoSetting(@PathVariable(name = "ledgerHash") HashDigest ledgerHash) {
+		return getLedgerAdminInfo(ledgerHash).getSettings().getCryptoSetting();
 	}
 
 	@RequestMapping(method = RequestMethod.GET, path = GET_LEDGER_METADATA)
@@ -601,28 +600,17 @@ public class LedgerQueryController implements BlockchainQueryService {
 		fromIndex = queryArgs.getFrom();
 		count = queryArgs.getCount();
 
-        if (ledger.getLedgerDataStructure().equals(LedgerDataStructure.MERKLE_TREE)) {
-            SkippingIterator<DataEntry<String, TypedValue>> iterator = ((IteratorDataset) dataAccount.getDataset()).iterator();
-            iterator.skip(fromIndex);
-            TypedKVEntry[] typedKVEntries = iterator.next(count, TypedKVEntry.class,
-                    new Mapper<DataEntry<String, TypedValue>, TypedKVEntry>() {
-                        @Override
-                        public TypedKVEntry from(DataEntry<String, TypedValue> entry) {
-                            return entry == null ? null
-                                    : new TypedKVData(entry.getKey(), entry.getVersion(), entry.getValue());
-                        }
-                    });
-            return typedKVEntries;
-        } else {
-            TypedKVEntry[] typedKVEntries = new TypedKVEntry[count];
-            for (int i = 0; i < count; i++) {
-                String kvKey = BytesUtils.toString(((SimpleDatasetImpl)(((ComplecatedSimpleAccount)(dataAccount.getMklAccount())).getDataDataset())).getKeyByIndex(fromIndex + i));
-                DataEntry<String, TypedValue> entry = dataAccount.getDataset().getDataEntry(kvKey);
-                typedKVEntries[i] = new TypedKVData(entry.getKey(), entry.getVersion(), entry.getValue());
-            }
-
-           return typedKVEntries;
-        }
+		SkippingIterator<DataEntry<String, TypedValue>> iterator = ((IteratorDataset) dataAccount.getDataset()).kvIterator();
+		iterator.skip(fromIndex);
+		TypedKVEntry[] typedKVEntries = iterator.next(count, TypedKVEntry.class,
+				new Mapper<DataEntry<String, TypedValue>, TypedKVEntry>() {
+					@Override
+					public TypedKVEntry from(DataEntry<String, TypedValue> entry) {
+						return entry == null ? null
+								: new TypedKVData(entry.getKey(), entry.getVersion(), entry.getValue());
+					}
+				});
+		return typedKVEntries;
 	}
 
 	@RequestMapping(method = RequestMethod.GET, path = GET_KV_COUNT)
@@ -713,13 +701,9 @@ public class LedgerQueryController implements BlockchainQueryService {
 		EventAccountSet eventAccountSet = ledger.getEventAccountSet(ledger.getLatestBlock());
 		QueryArgs queryArgs = QueryUtils.calFromIndexAndCount(fromIndex, count, (int) eventAccountSet.getTotal());
 
-		if (ledger.getLedgerDataStructure().equals(LedgerDataStructure.MERKLE_TREE)) {
-			SkippingIterator<BlockchainIdentity> it = eventAccountSet.identityIterator();
-			it.skip(queryArgs.getFrom());
-			return it.next(queryArgs.getCount(), BlockchainIdentity.class);
-		} else {
-			return ((EventAccountSetEditorSimple)eventAccountSet).getEventAccounts(queryArgs.getFrom(), queryArgs.getCount());
-		}
+		SkippingIterator<BlockchainIdentity> it = eventAccountSet.identityIterator();
+		it.skip(queryArgs.getFrom());
+		return it.next(queryArgs.getCount(), BlockchainIdentity.class);
 	}
 
 	@RequestMapping(method = RequestMethod.GET, path = GET_EVENT_ACCOUNT)
@@ -841,13 +825,9 @@ public class LedgerQueryController implements BlockchainQueryService {
 		UserAccountSet userAccountSet = ledger.getUserAccountSet(block);
 		QueryArgs queryArgs = QueryUtils.calFromIndexAndCountDescend(fromIndex, count, (int) userAccountSet.getTotal());
 
-		if (ledger.getLedgerDataStructure().equals(LedgerDataStructure.MERKLE_TREE)) {
-			SkippingIterator<BlockchainIdentity> it = userAccountSet.identityIterator();
-			it.skip(queryArgs.getFrom());
-			return it.next(queryArgs.getCount(), BlockchainIdentity.class);
-		} else {
-			return ((UserAccountSetEditorSimple)userAccountSet).getUserAccounts(queryArgs.getFrom(), queryArgs.getCount());
-		}
+		SkippingIterator<BlockchainIdentity> it = userAccountSet.identityIterator();
+		it.skip(queryArgs.getFrom());
+		return it.next(queryArgs.getCount(), BlockchainIdentity.class);
 	}
 
 	/**
@@ -868,13 +848,9 @@ public class LedgerQueryController implements BlockchainQueryService {
 		DataAccountSet dataAccountSet = ledger.getDataAccountSet(block);
 		QueryArgs queryArgs = QueryUtils.calFromIndexAndCountDescend(fromIndex, count, (int) dataAccountSet.getTotal());
 
-		if (ledger.getLedgerDataStructure().equals(LedgerDataStructure.MERKLE_TREE)) {
-			SkippingIterator<BlockchainIdentity> it = dataAccountSet.identityIterator();
-			it.skip(queryArgs.getFrom());
-			return it.next(queryArgs.getCount(), BlockchainIdentity.class);
-		} else {
-			return ((DataAccountSetEditorSimple)dataAccountSet).getDataAccounts(queryArgs.getFrom(), queryArgs.getCount());
-		}
+		SkippingIterator<BlockchainIdentity> it = dataAccountSet.identityIterator();
+		it.skip(queryArgs.getFrom());
+		return it.next(queryArgs.getCount(), BlockchainIdentity.class);
 	}
 
 	@RequestMapping(method = RequestMethod.GET, path = GET_CONTRACT_ACCOUNT_SEQUENCE)
@@ -888,13 +864,9 @@ public class LedgerQueryController implements BlockchainQueryService {
 		QueryArgs queryArgs = QueryUtils.calFromIndexAndCountDescend(fromIndex, count,
 				(int) contractAccountSet.getTotal());
 
-		if (ledger.getLedgerDataStructure().equals(LedgerDataStructure.MERKLE_TREE)) {
-			SkippingIterator<BlockchainIdentity> it = contractAccountSet.identityIterator();
-			it.skip(queryArgs.getFrom());
-			return it.next(queryArgs.getCount(), BlockchainIdentity.class);
-		} else {
-			return ((ContractAccountSetEditorSimple)contractAccountSet).getContractAccounts(queryArgs.getFrom(), queryArgs.getCount());
-		}
+		SkippingIterator<BlockchainIdentity> it = contractAccountSet.identityIterator();
+		it.skip(queryArgs.getFrom());
+		return it.next(queryArgs.getCount(), BlockchainIdentity.class);
 	}
 
 	@RequestMapping(method = RequestMethod.GET, path = GET_ROLE_PRIVILEGES)

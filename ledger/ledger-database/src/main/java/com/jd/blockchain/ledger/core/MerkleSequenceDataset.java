@@ -28,7 +28,7 @@ import utils.io.BytesUtils;
  * @author huanghaiquan
  *
  */
-public class MerkleSequenceDataset implements MerkleDataset<Bytes, byte[]> {
+public class MerkleSequenceDataset implements BaseDataset<Bytes, byte[]> {
 
 	/**
 	 * 4 MB MaxSize of value;
@@ -36,7 +36,7 @@ public class MerkleSequenceDataset implements MerkleDataset<Bytes, byte[]> {
 	public static final int MAX_SIZE_OF_VALUE = 4 * 1024 * 1024;
 
 	public static final Bytes SN_PREFIX = Bytes.fromString("SN" + LedgerConsts.KEY_SEPERATOR);
-	public static final Bytes DATA_PREFIX = Bytes.fromString("KV" + LedgerConsts.KEY_SEPERATOR);
+//	public static final Bytes DATA_PREFIX = Bytes.fromString("KV" + LedgerConsts.KEY_SEPERATOR);
 	public static final Bytes MERKLE_TREE_PREFIX = Bytes.fromString("MKL" + LedgerConsts.KEY_SEPERATOR);
 
 	private final Bytes snKeyPrefix;
@@ -76,7 +76,7 @@ public class MerkleSequenceDataset implements MerkleDataset<Bytes, byte[]> {
 	 * @param versioningStorage 数据的存储；
 	 */
 	public MerkleSequenceDataset(CryptoSetting setting, String keyPrefix, ExPolicyKVStorage exPolicyStorage,
-			VersioningKVStorage versioningStorage) {
+								 VersioningKVStorage versioningStorage) {
 		this(setting, Bytes.fromString(keyPrefix), exPolicyStorage, versioningStorage);
 	}
 
@@ -88,7 +88,7 @@ public class MerkleSequenceDataset implements MerkleDataset<Bytes, byte[]> {
 	 * @param versioningStorage 数据的存储；
 	 */
 	public MerkleSequenceDataset(CryptoSetting setting, Bytes keyPrefix, ExPolicyKVStorage exPolicyStorage,
-			VersioningKVStorage versioningStorage) {
+								 VersioningKVStorage versioningStorage) {
 		// 缓冲对KV的写入；
 		this.bufferedStorage = new BufferedKVStorage(Crypto.getHashFunction(setting.getHashAlgorithm()), exPolicyStorage, versioningStorage, false);
 
@@ -98,7 +98,8 @@ public class MerkleSequenceDataset implements MerkleDataset<Bytes, byte[]> {
 		// this.snStorage = PrefixAppender.prefix(SN_PREFIX, (ExPolicyKVStorage)
 		// bufferedStorage);
 		snKeyPrefix = keyPrefix.concat(SN_PREFIX);
-		dataKeyPrefix = keyPrefix.concat(DATA_PREFIX);
+//		dataKeyPrefix = keyPrefix.concat(DATA_PREFIX);
+		dataKeyPrefix = keyPrefix;
 		this.valueStorage = bufferedStorage;
 		this.snStorage = bufferedStorage;
 
@@ -121,7 +122,7 @@ public class MerkleSequenceDataset implements MerkleDataset<Bytes, byte[]> {
 	 * @param snGenerator
 	 */
 	public MerkleSequenceDataset(HashDigest merkleRootHash, CryptoSetting setting, String keyPrefix,
-			ExPolicyKVStorage exPolicyStorage, VersioningKVStorage versioningStorage, boolean readonly) {
+								 ExPolicyKVStorage exPolicyStorage, VersioningKVStorage versioningStorage, boolean readonly) {
 		this(merkleRootHash, setting, Bytes.fromString(keyPrefix), exPolicyStorage, versioningStorage, readonly);
 	}
 
@@ -135,7 +136,7 @@ public class MerkleSequenceDataset implements MerkleDataset<Bytes, byte[]> {
 	 * @param snGenerator
 	 */
 	public MerkleSequenceDataset(HashDigest merkleRootHash, CryptoSetting setting, Bytes keyPrefix,
-			ExPolicyKVStorage exPolicyStorage, VersioningKVStorage versioningStorage, boolean readonly) {
+								 ExPolicyKVStorage exPolicyStorage, VersioningKVStorage versioningStorage, boolean readonly) {
 		// 缓冲对KV的写入；
 		this.bufferedStorage = new BufferedKVStorage(Crypto.getHashFunction(setting.getHashAlgorithm()), exPolicyStorage, versioningStorage, false);
 
@@ -143,7 +144,8 @@ public class MerkleSequenceDataset implements MerkleDataset<Bytes, byte[]> {
 //		snKeyPrefix = Bytes.fromString(keyPrefix + SN_PREFIX);
 //		dataKeyPrefix = Bytes.fromString(keyPrefix + DATA_PREFIX);
 		snKeyPrefix = keyPrefix.concat(SN_PREFIX);
-		dataKeyPrefix = keyPrefix.concat(DATA_PREFIX);
+//		dataKeyPrefix = keyPrefix.concat(DATA_PREFIX);
+		dataKeyPrefix = keyPrefix;
 		this.valueStorage = bufferedStorage;
 		this.snStorage = bufferedStorage;
 
@@ -158,6 +160,16 @@ public class MerkleSequenceDataset implements MerkleDataset<Bytes, byte[]> {
 
 	public boolean isReadonly() {
 		return readonly;
+	}
+
+	@Override
+	public void updatePreBlockHeight(long newBlockHeight) {
+		// do nothing in merkle ledger structure
+	}
+
+	@Override
+	public DataEntry<Bytes, byte[]>[] getDataEntries(long fromIndex, int count) {
+		return null;
 	}
 
 	void setReadonly() {
@@ -480,12 +492,23 @@ public class MerkleSequenceDataset implements MerkleDataset<Bytes, byte[]> {
 	}
 
 	@Override
-	public SkippingIterator<DataEntry<Bytes, byte[]>> iterator() {
+	public SkippingIterator<DataEntry<Bytes, byte[]>> idIterator() {
 		return new AscDataInterator(getDataCount());
 	}
 
 	@Override
-	public SkippingIterator<DataEntry<Bytes, byte[]>> iteratorDesc() {
+	public SkippingIterator<DataEntry<Bytes, byte[]>> kvIterator() {
+		return new AscDataInterator(getDataCount());
+	}
+
+
+	@Override
+	public SkippingIterator<DataEntry<Bytes, byte[]>> idIteratorDesc() {
+		return new DescDataInterator(getDataCount());
+	}
+
+	@Override
+	public SkippingIterator<DataEntry<Bytes, byte[]>> kvIteratorDesc() {
 		return new DescDataInterator(getDataCount());
 	}
 

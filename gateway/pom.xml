@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>com.jd.blockchain</groupId>
 		<artifactId>jdchain-core</artifactId>
-		<version>1.6.3.RELEASE</version>
+		<version>1.6.4.RELEASE</version>
 	</parent>
 	<artifactId>gateway</artifactId>
 
@@ -121,7 +121,7 @@
 
 		<dependency>
 			<groupId>com.jd.utils</groupId>
-			<artifactId>utils-sm-tls</artifactId>
+			<artifactId>utils-crypto-sm</artifactId>
 			<version>${utils.version}</version>
 		</dependency>
 

@@ -6,6 +6,7 @@ import com.jd.blockchain.crypto.Crypto;
 import com.jd.blockchain.crypto.HashDigest;
 import com.jd.blockchain.ledger.CryptoSetting;
 import com.jd.blockchain.ledger.IllegalTransactionException;
+import com.jd.blockchain.ledger.LedgerDataStructure;
 import com.jd.blockchain.ledger.LedgerException;
 import com.jd.blockchain.ledger.LedgerTransaction;
 import com.jd.blockchain.ledger.MerkleProof;
@@ -23,6 +24,9 @@ import utils.DataEntry;
 import utils.SkippingIterator;
 import utils.Transactional;
 import utils.codec.Base58Utils;
+import utils.io.BytesUtils;
+
+import java.util.ArrayList;
 
 public class TransactionSetEditor implements Transactional, TransactionSet {
 
@@ -34,34 +38,50 @@ public class TransactionSetEditor implements Transactional, TransactionSet {
 //	private static final TransactionRequestConverter REQUEST_CONVERTER = new TransactionRequestConverter();
 	private static final HashDigestBytesConverter HASH_DIGEST_CONVERTER = new HashDigestBytesConverter();
 
-	private static final String TX_STATE_PREFIX = "STA" + LedgerConsts.KEY_SEPERATOR;
-
-	private static final String TX_SEQUENCE_PREFIX = "SEQ" + LedgerConsts.KEY_SEPERATOR;
+	private static final String TX_STATE_PREFIX = "ST" + LedgerConsts.KEY_SEPERATOR;
 
 	/**
 	 * 交易请求列表的根哈希保存在交易状态集的 key ；
 	 */
 	private static final Bytes TX_REQUEST_ROOT_HASH = Bytes.fromString("TX-REQUEST-BLOCKS");
 
-	private static final Bytes TX_REQUEST_KEY_PREFIX = Bytes.fromString("REQ" + LedgerConsts.KEY_SEPERATOR);
+	private static final Bytes TX_REQUEST_KEY_PREFIX = Bytes.fromString("RQ" + LedgerConsts.KEY_SEPERATOR);
 
-	private static final Bytes TX_RESULT_KEY_PREFIX = Bytes.fromString("RST" + LedgerConsts.KEY_SEPERATOR);
+	private static final Bytes TX_RESULT_KEY_PREFIX = Bytes.fromString("RT" + LedgerConsts.KEY_SEPERATOR);
+
+	private static final Bytes TX_SEQUENCE_KEY_PREFIX = Bytes.fromString("SQ" + LedgerConsts.KEY_SEPERATOR);
+
+	private static final Bytes TX_TOTOAL_KEY_PREFIX = Bytes.fromString("T");
+
 
 	/**
 	 * 交易状态集合；用于记录交易执行结果；
 	 */
-	private MerkleDataset<Bytes, byte[]> txStateSet;
+	private BaseDataset<Bytes, byte[]> txStateSet;
 
 	/**
 	 * 交易请求列表；用于记录交易请求的顺序；
 	 */
 	private MerkleList<HashDigest> txSequence;
 
+	private LedgerDataStructure ledgerDataStructure;
+
 	/**
 	 * 交易请求列表的根哈希在交易状态集合中的版本；(key 为 {@link #TX_REQUEST_ROOT_HASH} );
 	 * 
 	 */
 	private volatile long txRequestBlockID;
+
+	// start: only take effect in kv ledger structure
+	private volatile long txIndex = 0;
+
+	private volatile long origin_txIndex = 0;
+
+	private long preBlockHeight;
+
+	private ArrayList<HashDigest> transactions = new ArrayList<>();
+    // end: only take effect in kv ledger structure
+
 
 	/**
 	 * Create a new TransactionSet which can be added transaction;
@@ -71,83 +91,124 @@ public class TransactionSetEditor implements Transactional, TransactionSet {
 	 * @param dataStorage
 	 */
 	public TransactionSetEditor(CryptoSetting setting, String keyPrefix, ExPolicyKVStorage merkleTreeStorage,
-			VersioningKVStorage dataStorage) {
+			VersioningKVStorage dataStorage, LedgerDataStructure dataStructure) {
 
-		Bytes txStatePrefix = Bytes.fromString(keyPrefix + TX_STATE_PREFIX);
-		this.txStateSet = new MerkleHashDataset(setting, txStatePrefix, merkleTreeStorage, dataStorage);
+		ledgerDataStructure = dataStructure;
 
-		this.txRequestBlockID = -1;
+		if (dataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			Bytes txStatePrefix = Bytes.fromString(keyPrefix + TX_STATE_PREFIX);
+			this.txStateSet = new MerkleHashDataset(setting, txStatePrefix, merkleTreeStorage, dataStorage);
 
-		Bytes txSequencePrefix = Bytes.fromString(keyPrefix + TX_SEQUENCE_PREFIX);
-		TreeOptions options = TreeOptions.build().setDefaultHashAlgorithm(setting.getHashAlgorithm())
-				.setVerifyHashOnLoad(setting.getAutoVerifyHash());
-		this.txSequence = new MerkleList<>(options, txSequencePrefix, merkleTreeStorage, HASH_DIGEST_CONVERTER);
+			this.txRequestBlockID = -1;
 
+			Bytes txSequencePrefix = Bytes.fromString(keyPrefix).concat(TX_SEQUENCE_KEY_PREFIX);
+
+			TreeOptions options = TreeOptions.build().setDefaultHashAlgorithm(setting.getHashAlgorithm())
+					.setVerifyHashOnLoad(setting.getAutoVerifyHash());
+			this.txSequence = new MerkleList<>(options, txSequencePrefix, merkleTreeStorage, HASH_DIGEST_CONVERTER);
+		} else {
+			this.preBlockHeight = -1;
+			this.txStateSet = new KvDataset(DatasetType.TX, setting, keyPrefix, merkleTreeStorage, dataStorage);
+		}
 	}
 
 	/**
 	 * Create TransactionSet which is readonly to the history transactions;
-	 * 
+	 *
 	 * @param setting
 	 * @param merkleTreeStorage
 	 * @param dataStorage
 	 */
-	public TransactionSetEditor(HashDigest txRootHash, CryptoSetting setting, String keyPrefix,
-			ExPolicyKVStorage merkleTreeStorage, VersioningKVStorage dataStorage, boolean readonly) {
+	public TransactionSetEditor(long preBlockHeight, HashDigest txRootHash, CryptoSetting setting, String keyPrefix,
+								ExPolicyKVStorage merkleTreeStorage, VersioningKVStorage dataStorage, LedgerDataStructure dataStructure, boolean readonly) {
+		ledgerDataStructure = dataStructure;
 
-		Bytes txStatePrefix = Bytes.fromString(keyPrefix + TX_STATE_PREFIX);
-		this.txStateSet = new MerkleHashDataset(txRootHash, setting, txStatePrefix, merkleTreeStorage, dataStorage,
-				readonly);
+		if (dataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			Bytes txStatePrefix = Bytes.fromString(keyPrefix + TX_STATE_PREFIX);
+			this.txStateSet = new MerkleHashDataset(txRootHash, setting, txStatePrefix, merkleTreeStorage, dataStorage,
+					readonly);
 
-		DataEntry<Bytes, byte[]> txReqRootHashData = this.txStateSet.getDataEntry(TX_REQUEST_ROOT_HASH);
-		this.txRequestBlockID = txReqRootHashData.getVersion();
-		HashDigest txRequestRootHash = Crypto.resolveAsHashDigest(txReqRootHashData.getValue());
+			DataEntry<Bytes, byte[]> txReqRootHashData = this.txStateSet.getDataEntry(TX_REQUEST_ROOT_HASH);
+			this.txRequestBlockID = txReqRootHashData.getVersion();
+			HashDigest txRequestRootHash = Crypto.resolveAsHashDigest(txReqRootHashData.getValue());
 
-		Bytes txRequestPrefix = Bytes.fromString(keyPrefix + TX_SEQUENCE_PREFIX);
-		TreeOptions options = TreeOptions.build().setDefaultHashAlgorithm(setting.getHashAlgorithm())
-				.setVerifyHashOnLoad(setting.getAutoVerifyHash());
-		this.txSequence = new MerkleList<>(txRequestRootHash, options, txRequestPrefix, merkleTreeStorage,
-				HASH_DIGEST_CONVERTER);
+			Bytes txRequestPrefix = Bytes.fromString(keyPrefix).concat(TX_SEQUENCE_KEY_PREFIX);
+			TreeOptions options = TreeOptions.build().setDefaultHashAlgorithm(setting.getHashAlgorithm())
+					.setVerifyHashOnLoad(setting.getAutoVerifyHash());
+			this.txSequence = new MerkleList<>(txRequestRootHash, options, txRequestPrefix, merkleTreeStorage,
+					HASH_DIGEST_CONVERTER);
+
+		} else {
+			this.preBlockHeight = preBlockHeight;
+			this.txStateSet = new KvDataset(preBlockHeight, txRootHash, DatasetType.TX, setting, keyPrefix, merkleTreeStorage, dataStorage,
+					readonly);
+		}
 	}
 
 	@Override
 	public LedgerTransaction[] getTransactions(int fromIndex, int count) {
+		LedgerTransaction[] ledgerTransactions;
+
 		if (count > LedgerConsts.MAX_LIST_COUNT) {
 			throw new IllegalArgumentException("Count exceed the upper limit[" + LedgerConsts.MAX_LIST_COUNT + "]!");
 		}
 
-		SkippingIterator<HashDigest> txReqIterator = txSequence.iterator();
+		if (ledgerDataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			SkippingIterator<HashDigest> txReqIterator = txSequence.iterator();
 
-		txReqIterator.skip(fromIndex);
+			txReqIterator.skip(fromIndex);
 
-		int txCount = (int) Math.min(txReqIterator.getCount(), (long) count);
-		LedgerTransaction[] ledgerTransactions = new LedgerTransaction[txCount];
+			int txCount = (int) Math.min(txReqIterator.getCount(), (long) count);
+			ledgerTransactions = new LedgerTransaction[txCount];
 
-		for (int i = 0; i < txCount; i++) {
-			HashDigest txHash = txReqIterator.next();
-			ledgerTransactions[i] = getTransaction(txHash);
+			for (int i = 0; i < txCount; i++) {
+				HashDigest txHash = txReqIterator.next();
+				ledgerTransactions[i] = getTransaction(txHash);
+			}
+		} else {
+			int txCount = (int) Math.min(getTotalCount() - fromIndex, (long) count);
+			ledgerTransactions = new LedgerTransaction[txCount];
+
+			for (int i = 0; i < txCount; i++) {
+//				HashDigest txHash = loadReqHash(fromIndex + i);
+//				ledgerTransactions[i] = getTransaction(txHash);
+				ledgerTransactions[i] = getTransaction(fromIndex + i);
+			}
 		}
 		return ledgerTransactions;
 	}
-	
+
 	@Override
 	public TransactionResult[] getTransactionResults(int fromIndex, int count) {
+		TransactionResult[] transactionResults;
+
 		if (count > LedgerConsts.MAX_LIST_COUNT) {
 			throw new IllegalArgumentException("Count exceed the upper limit[" + LedgerConsts.MAX_LIST_COUNT + "]!");
 		}
 
-		SkippingIterator<HashDigest> txReqIterator = txSequence.iterator();
+		if (ledgerDataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			SkippingIterator<HashDigest> txReqIterator = txSequence.iterator();
 
-		txReqIterator.skip(fromIndex);
+			txReqIterator.skip(fromIndex);
 
-		int txCount = (int) Math.min(txReqIterator.getCount(), (long) count);
-		TransactionResult[] ledgerTransactions = new TransactionResult[txCount];
+			int txCount = (int) Math.min(txReqIterator.getCount(), (long) count);
+			transactionResults = new TransactionResult[txCount];
 
-		for (int i = 0; i < txCount; i++) {
-			HashDigest txHash = txReqIterator.next();
-			ledgerTransactions[i] = loadResult(txHash);
+			for (int i = 0; i < txCount; i++) {
+				HashDigest txHash = txReqIterator.next();
+				transactionResults[i] = loadResult(txHash);
+			}
+		} else {
+			int txCount = (int) Math.min(getTotalCount()-fromIndex, (long) count);
+			transactionResults = new TransactionResult[txCount];
+
+			for (int i = 0; i < txCount; i++) {
+//				HashDigest txHash = loadReqHash(fromIndex + i);
+				transactionResults[i] = loadResultKv(fromIndex + i);
+			}
+
 		}
-		return ledgerTransactions;
+		return transactionResults;
 	}
 
 	@Override
@@ -162,7 +223,12 @@ public class TransactionSetEditor implements Transactional, TransactionSet {
 
 	@Override
 	public long getTotalCount() {
-		return txSequence.size();
+		if (ledgerDataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			return txSequence.size();
+		} else {
+			return txStateSet.getDataCount() + txIndex;
+		}
+
 	}
 
 	/**
@@ -171,9 +237,16 @@ public class TransactionSetEditor implements Transactional, TransactionSet {
 	 */
 	public void addTransaction(TransactionRequest txRequest, TransactionResult txResult) {
 		// TODO: 优化对交易内存存储的优化，应对大数据量单交易，共享操作的“写集”与实际写入账户的KV版本；
-		txSequence.add(txRequest.getTransactionHash());
-		saveRequest(txRequest);
-		saveResult(txResult);
+		if (ledgerDataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			txSequence.add(txRequest.getTransactionHash());
+			saveRequest(txRequest);
+			saveResult(txResult);
+		} else {
+			saveRequest(txRequest);
+			saveResult(txResult);
+			saveSequence(txRequest);
+			transactions.add(txRequest.getTransactionHash());
+		}
 	}
 
 	public LedgerTransaction getTransaction(String base58Hash) {
@@ -187,17 +260,44 @@ public class TransactionSetEditor implements Transactional, TransactionSet {
 	 */
 	@Override
 	public LedgerTransaction getTransaction(HashDigest txContentHash) {
-		TransactionRequest txRequest = loadRequest(txContentHash);
+
+		if (ledgerDataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			TransactionRequest txRequest = loadRequest(txContentHash);
+			if (null == txRequest) {
+				return null;
+			}
+			TransactionResult txResult = loadResult(txContentHash);
+			if (null == txResult) {
+				return null;
+			}
+			return new LedgerTransactionData(txRequest, txResult);
+		} else {
+
+			long seq = loadReqSeq(txContentHash);
+			return getTransaction(seq);
+		}
+	}
+
+	private long loadReqSeq(HashDigest txContentHash) {
+		Bytes key = encodeSeqKey(txContentHash);
+		byte[] txReqIndex = txStateSet.getValue(key, 0);
+
+		return BytesUtils.toLong(txReqIndex);
+	}
+
+	@Override
+	public LedgerTransaction getTransaction(long txSeq) {
+		TransactionRequest txRequest = loadRequestKv(txSeq);
 		if(null == txRequest) {
 			return null;
 		}
-		TransactionResult txResult = loadResult(txContentHash);
+		TransactionResult txResult = loadResultKv(txSeq);
 		if(null == txResult) {
 			return null;
 		}
 		return new LedgerTransactionData(txRequest, txResult);
 	}
-	
+
 	@Override
 	public TransactionRequest getTransactionRequest(HashDigest txContentHash) {
 		return loadRequest(txContentHash);
@@ -228,18 +328,34 @@ public class TransactionSetEditor implements Transactional, TransactionSet {
 		return BinaryProtocol.decode(txBytes, TransactionResult.class);
 	}
 
+	private TransactionResult loadResultKv(long seq) {
+		// transaction has only one version;
+		Bytes key = encodeKvResultKey(seq);
+		byte[] txBytes = txStateSet.getValue(key, 0);
+		if (txBytes == null) {
+			return null;
+		}
+		return BinaryProtocol.decode(txBytes, TransactionResult.class);
+	}
+
 	private void saveResult(TransactionResult txResult) {
 		// 序列化交易内容；
 		byte[] txResultBytes = BinaryProtocol.encode(txResult, TransactionResult.class);
-		// 以交易内容的 hash 为 key；
-		Bytes key = encodeResultKey(txResult.getTransactionHash());
+		Bytes key;
+
+		if (ledgerDataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			// 以交易内容的 hash 为 key；
+			key = encodeResultKey(txResult.getTransactionHash());
+		} else {
+			key = encodeKvResultKey(txStateSet.getDataCount() + txIndex);
+		}
 		// 交易只有唯一的版本；
 		long v = txStateSet.setValue(key, txResultBytes);
 		if (v < 0) {
 			throw new IllegalTransactionException("Repeated transaction request! --[" + key + "]");
 		}
 	}
-	
+
 	private TransactionRequest loadRequest(HashDigest txContentHash) {
 		// transaction has only one version;
 		Bytes key = encodeRequestKey(txContentHash);
@@ -249,12 +365,28 @@ public class TransactionSetEditor implements Transactional, TransactionSet {
 		}
 		return BinaryProtocol.decode(txBytes, TransactionRequest.class);
 	}
-	
-	private void saveRequest(TransactionRequest txResult) {
+
+	// 以账本为维度，加载指定交易索引的交易请求hash
+	private TransactionRequest loadRequestKv(long seq) {
+		Bytes key = encodeKvRequestKey(seq);
+		byte[] txHashBytes = txStateSet.getValue(key, 0);
+		if (txHashBytes == null) {
+			return null;
+		}
+		return BinaryProtocol.decode(txHashBytes, TransactionRequest.class);
+	}
+
+	private void saveRequest(TransactionRequest txRequest) {
 		// 序列化交易内容；
-		byte[] txResultBytes = BinaryProtocol.encode(txResult, TransactionRequest.class);
-		// 以交易内容的 hash 为 key；
-		Bytes key = encodeRequestKey(txResult.getTransactionHash());
+		byte[] txResultBytes = BinaryProtocol.encode(txRequest, TransactionRequest.class);
+
+		Bytes key;
+		if (ledgerDataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			// 以交易内容的 hash 为 key；
+			key = encodeRequestKey(txRequest.getTransactionHash());
+		} else {
+			key = encodeKvRequestKey(txStateSet.getDataCount() + txIndex);
+		}
 		// 交易只有唯一的版本；
 		long v = txStateSet.setValue(key, txResultBytes);
 		if (v < 0) {
@@ -270,6 +402,26 @@ public class TransactionSetEditor implements Transactional, TransactionSet {
 		return TX_REQUEST_KEY_PREFIX.concat(txContentHash);
 	}
 
+	private Bytes encodeKvRequestKey(long seq) {
+		return TX_REQUEST_KEY_PREFIX.concat(Bytes.fromString(String.valueOf(seq)));
+	}
+
+	private Bytes encodeKvResultKey(long seq) {
+		return TX_RESULT_KEY_PREFIX.concat(Bytes.fromString(String.valueOf(seq)));
+	}
+
+//	private Bytes encodeSeqKey(long seq) {
+//		return TX_SEQUENCE_KEY_PREFIX.concat(Bytes.fromString(String.valueOf(seq)));
+//	}
+
+	private Bytes encodeSeqKey(HashDigest txContentHash) {
+		return TX_SEQUENCE_KEY_PREFIX.concat(txContentHash);
+	}
+
+	private Bytes encodeTotalNumKey() {
+		return TX_TOTOAL_KEY_PREFIX;
+	}
+
 	public boolean isReadonly() {
 		return txStateSet.isReadonly();
 	}
@@ -281,35 +433,58 @@ public class TransactionSetEditor implements Transactional, TransactionSet {
 
 	@Override
 	public synchronized void commit() {
-		txSequence.commit();
-		HashDigest txReqRootHash = txSequence.getRootHash();
-		long v = txStateSet.setValue(TX_REQUEST_ROOT_HASH, txReqRootHash.toBytes(), txRequestBlockID);
-		if (v < 0) {
-			throw new LedgerException("Fail to save the root hash of transaction request!");
+		if (ledgerDataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			txSequence.commit();
+			HashDigest txReqRootHash = txSequence.getRootHash();
+			long v = txStateSet.setValue(TX_REQUEST_ROOT_HASH, txReqRootHash.toBytes(), txRequestBlockID);
+			if (v < 0) {
+				throw new LedgerException("Fail to save the root hash of transaction request!");
+			}
+			txStateSet.commit();
+			txRequestBlockID = v;
+		} else {
+			origin_txIndex = txIndex;
+			saveTotalByHeight();
+			txStateSet.commit();
 		}
-		txStateSet.commit();
-		txRequestBlockID = v;
 	}
 
 	@Override
 	public void cancel() {
-		txSequence.cancel();
-		txStateSet.cancel();
+		if (ledgerDataStructure.equals(LedgerDataStructure.MERKLE_TREE)) {
+			txSequence.cancel();
+			txStateSet.cancel();
+		} else {
+			txStateSet.cancel();
+			// 恢复到上次的交易索引
+			txIndex = origin_txIndex;
+		}
 	}
 
-//	private static class TransactionRequestConverter implements BytesConverter<TransactionRequest> {
-//
-//		@Override
-//		public byte[] toBytes(TransactionRequest value) {
-//			return BinaryProtocol.encode(value, TransactionRequest.class);
-//		}
-//
-//		@Override
-//		public TransactionRequest fromBytes(byte[] bytes) {
-//			return BinaryProtocol.decode(bytes, TransactionRequest.class);
-//		}
-//
-//	}
+	// 以账本为维度记录交易哈希对应的索引号
+	private void saveSequence(TransactionRequest txRequest) {
+		// key = keyprefix/SQ/txHash
+		Bytes key = encodeSeqKey(txRequest.getTransactionHash());
+
+		// 交易序号只有唯一的版本；
+		long v = txStateSet.setValue(key, BytesUtils.toBytes(txStateSet.getDataCount() + txIndex));
+		if (v < 0) {
+			throw new IllegalTransactionException("Repeated transaction request sequence! --[" + key + "]");
+		}
+		txIndex++;
+	}
+
+	// 按照区块高度记录交易总数
+	private void saveTotalByHeight() {
+		// key = keyprefix/T
+		Bytes key = encodeTotalNumKey();
+
+		// 交易序号只有唯一的版本；
+		long v = txStateSet.setValue(key, BytesUtils.toBytes(getTotalCount()), preBlockHeight);
+		if (v < 0) {
+			throw new IllegalTransactionException("Repeated transaction request sequence! --[" + key + "]");
+		}
+	}
 
 	private static class HashDigestBytesConverter implements BytesConverter<HashDigest> {
 
@@ -323,6 +498,14 @@ public class TransactionSetEditor implements Transactional, TransactionSet {
 			return Crypto.resolveAsHashDigest(bytes);
 		}
 
+	}
+
+	public void clearCachedIndex() {
+		txIndex = 0;
+	}
+
+	public void updatePreBlockHeight(long newBlockHeight) {
+		txStateSet.updatePreBlockHeight(newBlockHeight);
 	}
 
 }
