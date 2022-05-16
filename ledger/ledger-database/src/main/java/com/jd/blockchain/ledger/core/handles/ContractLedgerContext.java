@@ -961,6 +961,14 @@ public class ContractLedgerContext implements LedgerContext {
         }
 
         @Override
+        public DataAccountKVSetOperationBuilder setText(String key, String value, long expVersion, boolean isChameleonHash) {
+            BytesValue bytesValue = TypedValue.fromText(value);
+            this.op = new SingleKVSetOpTemplate(key, bytesValue, expVersion,isChameleonHash);
+            handle(op);
+            return this;
+        }
+
+        @Override
         public DataAccountKVSetOperationBuilder setBytes(String key, Bytes value, long expVersion) {
             BytesValue bytesValue = TypedValue.fromBytes(value);
             this.op = new SingleKVSetOpTemplate(key, bytesValue, expVersion);
@@ -1037,6 +1045,10 @@ public class ContractLedgerContext implements LedgerContext {
 
             private SingleKVSetOpTemplate(String key, BytesValue value, long expVersion) {
                 writeset[0] = new KVData(key, value, expVersion);
+            }
+
+            private SingleKVSetOpTemplate(String key, BytesValue value, long expVersion,boolean isChameleonHash) {
+                writeset[0] = new KVData(key, value, expVersion,isChameleonHash);
             }
 
             @Override
