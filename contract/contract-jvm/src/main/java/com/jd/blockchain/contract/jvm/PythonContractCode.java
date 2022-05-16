@@ -25,6 +25,7 @@ public class PythonContractCode extends AbstractContractCode {
 
     }
 
+    @Override
     protected Object getContractInstance(ContractEventContext eventContext) {
         // 设置类加载器，适配GraalVM
         contractClassLoader.set(Thread.currentThread().getContextClassLoader());

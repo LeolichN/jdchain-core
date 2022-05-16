@@ -37,6 +37,7 @@ public class RustContractCode extends AbstractContractCode {
         this.chainCode = chainCode;
     }
 
+    @Override
     protected Object getContractInstance(ContractEventContext eventContext) {
         Module module = new Module(chainCode);
         try {
