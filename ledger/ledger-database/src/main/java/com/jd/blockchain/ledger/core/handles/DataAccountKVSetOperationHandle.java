@@ -40,7 +40,7 @@ public class DataAccountKVSetOperationHandle extends AbstractLedgerOperationHand
 		KVWriteEntry[] writeSet = kvWriteOp.getWriteSet();
 		long v = -1L;
 		byte[] onceHashData = null;
-		DataAccountChameleonOnceCheck chameleonOnceCheck = null;
+
 		for (KVWriteEntry kvw : writeSet) {
 			v = account.getDataset().setValue(kvw.getKey(), TypedValue.wrap(kvw.getValue()), kvw.getExpectedVersion());
 			if (v < 0) {
@@ -52,12 +52,10 @@ public class DataAccountKVSetOperationHandle extends AbstractLedgerOperationHand
 				}else{
 					onceHashData = BytesUtils.concat(onceHashData,kvw.getValue().getBytes().toBytes());
 				}
-				if(kvw.hashChameleonOnce() != null && chameleonOnceCheck == null){
-					chameleonOnceCheck = kvw.hashChameleonOnce();
-				}
 			}
 		}
-		if(chameleonOnceCheck != null && onceHashData != null){
+		if(onceHashData != null){
+			DataAccountChameleonOnceCheck chameleonOnceCheck = new ChameleonOnceCheck();
 			BytesValue hashResult = chameleonOnceCheck.hashDataOnce(onceHashData,account.getPubKey().getRawKeyBytes());
 			if(account.getDataset().getValue(TypedValue.wrap(hashResult).stringValue()) != null){
 				throw new DataVersionConflictException();
