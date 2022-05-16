@@ -56,11 +56,11 @@ public class DataAccountKVSetOperationHandle extends AbstractLedgerOperationHand
 		}
 		if(onceHashData != null){
 			DataAccountChameleonOnceCheck chameleonOnceCheck = new ChameleonOnceCheck();
-			BytesValue hashResult = chameleonOnceCheck.hashDataOnce(onceHashData,account.getPubKey().getRawKeyBytes());
-			if(account.getDataset().getValue(TypedValue.wrap(hashResult).stringValue()) != null){
+			byte[] hashResult = chameleonOnceCheck.hashDataOnce(onceHashData,account.getPubKey().getRawKeyBytes());
+			if(account.getDataset().getValue(TypedValue.fromBytes(hashResult).stringValue()) != null){
 				throw new DataVersionConflictException();
 			}else{
-				account.getDataset().setValue(TypedValue.wrap(hashResult).stringValue(),TypedValue.fromBoolean(true));
+				account.getDataset().setValue(TypedValue.fromBytes(hashResult).stringValue(),TypedValue.fromBoolean(true));
 			}
 		}
 	}
