@@ -8,21 +8,38 @@ import com.jd.blockchain.consensus.bftsmart.BftsmartConsensusConfig;
 import com.jd.blockchain.consensus.bftsmart.BftsmartConsensusViewSettings;
 import com.jd.blockchain.consensus.bftsmart.BftsmartNodeConfig;
 import com.jd.blockchain.consensus.bftsmart.BftsmartNodeSettings;
+import com.jd.blockchain.consensus.mq.config.MsgQueueBlockConfig;
+import com.jd.blockchain.consensus.mq.config.MsgQueueConsensusConfig;
+import com.jd.blockchain.consensus.mq.config.MsgQueueNetworkConfig;
+import com.jd.blockchain.consensus.mq.config.MsgQueueNodeConfig;
+import com.jd.blockchain.consensus.mq.settings.MsgQueueBlockSettings;
+import com.jd.blockchain.consensus.mq.settings.MsgQueueConsensusSettings;
+import com.jd.blockchain.consensus.mq.settings.MsgQueueNetworkSettings;
+import com.jd.blockchain.consensus.mq.settings.MsgQueueNodeSettings;
+import com.jd.blockchain.consensus.raft.config.RaftConfig;
+import com.jd.blockchain.consensus.raft.config.RaftConsensusConfig;
+import com.jd.blockchain.consensus.raft.config.RaftNetworkConfig;
+import com.jd.blockchain.consensus.raft.config.RaftNodeConfig;
+import com.jd.blockchain.consensus.raft.settings.RaftConsensusSettings;
+import com.jd.blockchain.consensus.raft.settings.RaftNodeSettings;
 import com.jd.blockchain.contract.ContractProcessor;
 import com.jd.blockchain.contract.OnLineContractProcessor;
 import com.jd.blockchain.crypto.HashDigest;
-import com.jd.blockchain.ledger.*;
+import com.jd.blockchain.ledger.ContractInfo;
+import com.jd.blockchain.ledger.LedgerAdminInfo;
+import com.jd.blockchain.ledger.LedgerMetadata_V2;
+import com.jd.blockchain.ledger.ParticipantNode;
 import com.jd.blockchain.sdk.DecompliedContractInfo;
 import com.jd.blockchain.sdk.LedgerInitAttributes;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 import utils.codec.HexUtils;
 import utils.query.QueryArgs;
 import utils.query.QueryUtils;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 import java.util.Arrays;
 
 /**
@@ -73,7 +90,7 @@ public class GatewayQueryServiceHandler implements GatewayQueryService {
 
 		try {
 			// 将反编译chainCode
-			String mainClassJava = CONTRACT_PROCESSOR.decompileEntranceClass(chainCodeBytes);
+			String mainClassJava = CONTRACT_PROCESSOR.decompileEntranceClass(chainCodeBytes, contractInfo.getLang());
 			contractSettings.setChainCode(mainClassJava);
 		} catch (Exception e) {
 			// 打印日志
@@ -115,6 +132,8 @@ public class GatewayQueryServiceHandler implements GatewayQueryService {
 		ledgerBaseSettings.setLedgerCertificates(ledgerMetadata.getLedgerCertificates());
 		// 设置创世用户
 		ledgerBaseSettings.setGenesisUsers(ledgerMetadata.getGenesisUsers());
+		// 设置合约运行时配置
+		ledgerBaseSettings.setContractRuntimeConfig(ledgerMetadata.getContractRuntimeConfig());
 		return ledgerBaseSettings;
 	}
 
@@ -173,6 +192,66 @@ public class GatewayQueryServiceHandler implements GatewayQueryService {
 				}
 			}
 			return new BftsmartConsensusConfig(bftsmartNodes, bftsmartConsensusSettings.getSystemConfigs(), 0);
+		} else if (consensusSettings instanceof RaftConsensusSettings) {
+			RaftConsensusSettings raftConsensusSettings = (RaftConsensusSettings) consensusSettings;
+			NodeSettings[] nodes = raftConsensusSettings.getNodes();
+			RaftNodeSettings[] raftNodeSettings = new RaftNodeSettings[0];
+			if (nodes != null && nodes.length > 0) {
+				raftNodeSettings = new RaftNodeSettings[nodes.length];
+				for (int i = 0; i < nodes.length; i++) {
+					NodeSettings node = nodes[i];
+					if (node instanceof RaftNodeSettings) {
+						RaftNodeSettings raftNodeSetting = (RaftNodeSettings) node;
+						raftNodeSettings[i] = new RaftNodeConfig(raftNodeSetting.getId(),
+								raftNodeSetting.getAddress(), raftNodeSetting.getPubKey(), raftNodeSetting.getNetworkAddress());
+
+					}
+				}
+			}
+
+			RaftConsensusConfig raftConsensusConfig = new RaftConsensusConfig();
+			RaftConfig raftConfig = new RaftConfig();
+			RaftNetworkConfig raftNetworkConfig = new RaftNetworkConfig();
+
+			BeanUtils.copyProperties(raftConsensusSettings, raftConsensusConfig);
+			BeanUtils.copyProperties(raftConsensusSettings.getRaftSettings(), raftConfig);
+			BeanUtils.copyProperties(raftConsensusSettings.getNetworkSettings(), raftNetworkConfig);
+
+			raftConsensusConfig.setNodeSettingsList(Arrays.asList(raftNodeSettings));
+			raftConsensusConfig.setRaftSettings(raftConfig);
+			raftConsensusConfig.setNetworkSettings(raftNetworkConfig);
+
+
+			return raftConsensusConfig;
+		}else if(consensusSettings instanceof MsgQueueConsensusSettings) {
+			MsgQueueConsensusSettings mqConsensusSettings = (MsgQueueConsensusSettings) consensusSettings;
+			MsgQueueConsensusConfig mqConsensusConfig = new MsgQueueConsensusConfig();
+			MsgQueueBlockSettings blockSettings = mqConsensusSettings.getBlockSettings();
+			MsgQueueBlockConfig mqQueueBlockConfig = new MsgQueueBlockConfig();
+			mqQueueBlockConfig.setMaxDelayMilliSecondsPerBlock(blockSettings.getMaxDelayMilliSecondsPerBlock());
+			mqQueueBlockConfig.setTxSizePerBlock(blockSettings.getTxSizePerBlock());
+			mqConsensusConfig.setBlockSettings(mqQueueBlockConfig);
+
+			MsgQueueNetworkSettings networkSettings = mqConsensusSettings.getNetworkSettings();
+			MsgQueueNetworkConfig mqQueueNetworkConfig = new MsgQueueNetworkConfig();
+			mqQueueNetworkConfig.setBlockTopic(networkSettings.getBlockTopic());
+			mqQueueNetworkConfig.setMsgResultTopic(networkSettings.getMsgResultTopic());
+			mqQueueNetworkConfig.setMsgTopic(networkSettings.getMsgTopic());
+			mqQueueNetworkConfig.setServer(networkSettings.getServer());
+			mqQueueNetworkConfig.setTxTopic(networkSettings.getTxTopic());
+			mqQueueNetworkConfig.setTxResultTopic(networkSettings.getTxResultTopic());
+			mqConsensusConfig.setNetworkSettings(mqQueueNetworkConfig);
+
+			for(int i=0; i<mqConsensusSettings.getNodes().length; i++) {
+				MsgQueueNodeSettings nodeSettings = (MsgQueueNodeSettings)mqConsensusSettings.getNodes()[i];
+				MsgQueueNodeConfig msgQueueNodeConfig = new MsgQueueNodeConfig();
+				msgQueueNodeConfig.setAddress(nodeSettings.getAddress());
+				msgQueueNodeConfig.setPubKey(nodeSettings.getPubKey());
+				msgQueueNodeConfig.setId(nodeSettings.getId());
+				mqConsensusConfig.addNodeSettings(msgQueueNodeConfig);
+			}
+
+			return mqConsensusConfig;
 		}
 		return consensusSettings;
 	}

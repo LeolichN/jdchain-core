@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>com.jd.blockchain</groupId>
 		<artifactId>tools-core</artifactId>
-		<version>1.6.2.RELEASE</version>
+		<version>1.6.4.RELEASE</version>
 	</parent>
 	<artifactId>tools-initializer</artifactId>
 
@@ -36,6 +36,11 @@
 		</dependency>
 		<dependency>
 			<groupId>com.jd.blockchain</groupId>
+			<artifactId>crypto-adv</artifactId>
+			<version>${framework.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.jd.blockchain</groupId>
 			<artifactId>ledger-database</artifactId>
 			<version>${project.version}</version>
 		</dependency>
@@ -54,10 +59,19 @@
 			<artifactId>consensus-mq</artifactId>
 			<version>${project.version}</version>
 		</dependency>
-
+		<dependency>
+			<groupId>com.jd.blockchain</groupId>
+			<artifactId>consensus-raft</artifactId>
+			<version>${project.version}</version>
+		</dependency>
 		<dependency>
 			<groupId>com.jd.blockchain</groupId>
 			<artifactId>storage-composite</artifactId>
+			<version>${framework.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.jd.blockchain</groupId>
+			<artifactId>storage-rocksdb</artifactId>
 			<version>${framework.version}</version>
 		</dependency>
 

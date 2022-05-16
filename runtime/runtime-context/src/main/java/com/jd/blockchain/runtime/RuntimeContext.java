@@ -6,7 +6,6 @@ import java.io.InputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 import com.jd.blockchain.contract.ContractEntrance;
 import com.jd.blockchain.contract.ContractProcessor;
@@ -46,12 +45,10 @@ public abstract class RuntimeContext {
 
 	protected static void set(RuntimeContext runtimeContext) {
 		if (RuntimeContext.runtimeContext != null) {
-			throw new IllegalStateException("RuntimeContext has been setted!");
+			throw new IllegalStateException("RuntimeContext has been set!");
 		}
 		RuntimeContext.runtimeContext = runtimeContext;
 	}
-
-	private Map<String, Module> modules = new ConcurrentHashMap<>();
 
 	public RuntimeContext() {
 	}
@@ -73,27 +70,7 @@ public abstract class RuntimeContext {
 		return new File(parent, name);
 	}
 
-	public Module getDynamicModule(String name) {
-		return modules.get(name);
-
-	}
-
-	public List<Module> getDynamicModules() {
-		return new ArrayList<>(modules.values());
-	}
-
 	public Module createDynamicModule(String name, byte[] jarBytes) {
-		Module module = modules.get(name);
-		if (module != null) {
-			return module;
-		}
-		synchronized (DefaultRuntimeContext.class) {
-			module = modules.get(name);
-			if (module != null) {
-				return module;
-			}
-		}
-
 		// Save File to Disk;
 		File jarFile = getDynamicModuleJarFile(name);
 		synchronized (RuntimeContext.class) {
@@ -101,24 +78,14 @@ public abstract class RuntimeContext {
 				FileUtils.writeBytes(jarBytes, jarFile);
 			}
 		}
-//		if (jarFile.exists()) {
-//			if (jarFile.isFile()) {
-//				FileUtils.deleteFile(jarFile);
-//			} else {
-//				throw new IllegalStateException("Code storage conflict! --" + jarFile.getAbsolutePath());
-//			}
-//		}
-//		FileUtils.writeBytes(jarBytes, jarFile);
 
 		try {
 			URL jarURL = jarFile.toURI().toURL();
 			ClassLoader moduleClassLoader = createDynamicModuleClassLoader(jarURL);
 			ContractEntrance entrance = contractEntrance(jarFile);
 			String contractMainClass = entrance.getImpl();
-			module = new DefaultModule(name, moduleClassLoader, contractMainClass);
-			modules.put(name, module);
 
-			return module;
+			return new DefaultModule(name, moduleClassLoader, contractMainClass);
 		} catch (Exception e) {
 			throw new IllegalStateException(e.getMessage(), e);
 		}
@@ -130,9 +97,25 @@ public abstract class RuntimeContext {
 
 	public abstract Environment getEnvironment();
 
+	public abstract RuntimeSecurityManager getSecurityManager();
+
 	protected abstract String getRuntimeDir();
 
 	protected abstract URLClassLoader createDynamicModuleClassLoader(URL jarURL);
+
+	public static void enableSecurityManager() {
+		RuntimeSecurityManager securityManager = get().getSecurityManager();
+		if (null != securityManager) {
+			securityManager.enable();
+		}
+	}
+
+	public static void disableSecurityManager() {
+		RuntimeSecurityManager securityManager = get().getSecurityManager();
+		if (null != securityManager) {
+			securityManager.disable();
+		}
+	}
 
 	// ------------------------- inner types --------------------------
 
@@ -214,7 +197,11 @@ public abstract class RuntimeContext {
 
 		protected String runtimeDir;
 
+		protected String libsDir;
+
 		protected EnvSettings environment;
+
+		protected RuntimeSecurityManager securityManager;
 
 		public DefaultRuntimeContext() {
 
@@ -224,7 +211,10 @@ public abstract class RuntimeContext {
 			try {
 				this.homeDir = new File("./").getCanonicalPath();
 				this.runtimeDir = new File(homeDir, "runtime").getAbsolutePath();
+				this.libsDir = new File(homeDir, "libs").getAbsolutePath();
 				this.environment.setRuntimeDir(runtimeDir);
+				this.securityManager = new RuntimeSecurityManager(libsDir, false);
+				System.setSecurityManager(securityManager);
 			} catch (IOException e) {
 				throw new RuntimeIOException(e.getMessage(), e);
 			}
@@ -233,6 +223,11 @@ public abstract class RuntimeContext {
 		@Override
 		public Environment getEnvironment() {
 			return environment;
+		}
+
+		@Override
+		public RuntimeSecurityManager getSecurityManager() {
+			return securityManager;
 		}
 
 		@Override

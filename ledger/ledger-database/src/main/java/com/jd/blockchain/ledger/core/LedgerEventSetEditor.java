@@ -4,19 +4,19 @@ import utils.Transactional;
 
 public class LedgerEventSetEditor implements LedgerEventSet, Transactional {
 
-	private MerkleEventGroupPublisher systemEventPublisher;
+	private EventGroupPublisher systemEventPublisher;
 	private EventAccountSetEditor userEventSet;
 	private boolean readonly;
 
 
-	public LedgerEventSetEditor(MerkleEventGroupPublisher systemEventSet, EventAccountSetEditor userEventSet, boolean readonly) {
+	public LedgerEventSetEditor(EventGroupPublisher systemEventSet, EventAccountSetEditor userEventSet, boolean readonly) {
 		this.systemEventPublisher = systemEventSet;
 		this.userEventSet = userEventSet;
 		this.readonly = readonly;
 	}
 
 	@Override
-	public MerkleEventGroupPublisher getSystemEventGroup() {
+	public EventGroupPublisher getSystemEventGroup() {
 		return systemEventPublisher;
 	}
 
@@ -53,6 +53,16 @@ public class LedgerEventSetEditor implements LedgerEventSet, Transactional {
 
 	public boolean isReadonly() {
 		return readonly;
+	}
+
+	public void clearCachedIndex() {
+		systemEventPublisher.clearCachedIndex();
+		userEventSet.clearCachedIndex();
+	}
+
+	public void updatePreBlockHeight(long newBlockHeight) {
+		systemEventPublisher.updatePreBlockHeight(newBlockHeight);
+		userEventSet.updatePreBlockHeight(newBlockHeight);
 	}
 
 //	void setReadonly() {

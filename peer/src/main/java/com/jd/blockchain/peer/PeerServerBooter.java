@@ -2,13 +2,14 @@ package com.jd.blockchain.peer;
 
 import java.io.File;
 import java.io.InputStream;
-import java.net.URI;
 import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
+import com.jd.blockchain.ledger.ConsensusReconfigOperation;
+import com.jd.blockchain.ledger.HashAlgorithmUpdateOperation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -359,9 +360,8 @@ public class PeerServerBooter {
 		DataContractRegistry.register(EventPublishOperation.class);
 		DataContractRegistry.register(EventPublishOperation.EventEntry.class);
 		DataContractRegistry.register(ConsensusSettingsUpdateOperation.class);
-//		DataContractRegistry.register(TransactionPermission.class);
-//		DataContractRegistry.register(LedgerPermission.class);
-//		DataContractRegistry.register(RolesPolicy.class);
+		DataContractRegistry.register(ConsensusReconfigOperation.class);
+		DataContractRegistry.register(HashAlgorithmUpdateOperation.class);
 		DataContractRegistry.register(PrivilegeSet.class);
 		DataContractRegistry.register(RoleSet.class);
 		DataContractRegistry.register(SecurityInitSettings.class);
@@ -384,9 +384,6 @@ public class PeerServerBooter {
 		DataContractRegistry.register(ContractInfo.class);
 		DataContractRegistry.register(HashObject.class);
 		DataContractRegistry.register(CryptoAlgorithm.class);
-//		DataContractRegistry.register(TransactionState.class);
-//		DataContractRegistry.register(DataType.class);
-//		DataContractRegistry.register(ParticipantNodeState.class);
 		DataContractRegistry.register(DigitalSignature.class);
 		DataContractRegistry.register(DigitalSignatureBody.class);
 		DataContractRegistry.register(ClientCredential.class);

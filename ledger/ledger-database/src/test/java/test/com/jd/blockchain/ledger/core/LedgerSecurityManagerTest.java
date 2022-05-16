@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.jd.blockchain.ledger.LedgerDataStructure;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -24,10 +25,10 @@ import com.jd.blockchain.ledger.TransactionPermission;
 import com.jd.blockchain.ledger.core.CryptoConfig;
 import com.jd.blockchain.ledger.core.LedgerSecurityManager;
 import com.jd.blockchain.ledger.core.LedgerSecurityManagerImpl;
-import com.jd.blockchain.ledger.core.MultiIDsPolicy;
+import com.jd.blockchain.ledger.MultiIDsPolicy;
 import com.jd.blockchain.ledger.core.ParticipantCollection;
 import com.jd.blockchain.ledger.core.RolePrivilegeDataset;
-import com.jd.blockchain.ledger.core.SecurityPolicy;
+import com.jd.blockchain.ledger.SecurityPolicy;
 import com.jd.blockchain.ledger.core.UserAccountSet;
 import com.jd.blockchain.ledger.core.UserRoleDatasetEditor;
 import com.jd.blockchain.storage.service.utils.MemoryKVStorage;
@@ -61,14 +62,14 @@ public class LedgerSecurityManagerTest {
 	private RolePrivilegeDataset createRolePrivilegeDataset(MemoryKVStorage testStorage) {
 		String prefix = "role-privilege/";
 		RolePrivilegeDataset rolePrivilegeDataset = new RolePrivilegeDataset(CRYPTO_SETTINGS, prefix, testStorage,
-				testStorage);
+				testStorage, LedgerDataStructure.MERKLE_TREE);
 
 		return rolePrivilegeDataset;
 	}
 
 	private UserRoleDatasetEditor createUserRoleDataset(MemoryKVStorage testStorage) {
 		String prefix = "user-roles/";
-		UserRoleDatasetEditor userRolesDataset = new UserRoleDatasetEditor(CRYPTO_SETTINGS, prefix, testStorage, testStorage);
+		UserRoleDatasetEditor userRolesDataset = new UserRoleDatasetEditor(CRYPTO_SETTINGS, prefix, testStorage, testStorage, LedgerDataStructure.MERKLE_TREE);
 
 		return userRolesDataset;
 	}

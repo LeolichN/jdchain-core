@@ -2,7 +2,6 @@ package com.jd.blockchain.ledger.core.handles;
 
 import java.util.Arrays;
 
-import com.jd.blockchain.ledger.LedgerDataStructure;
 import com.jd.blockchain.ledger.LedgerPermission;
 import com.jd.blockchain.ledger.RoleDoesNotExistException;
 import com.jd.blockchain.ledger.RolePrivilegeSettings;
@@ -14,14 +13,13 @@ import com.jd.blockchain.ledger.UserRoles;
 import com.jd.blockchain.ledger.core.EventManager;
 import com.jd.blockchain.ledger.core.LedgerQuery;
 import com.jd.blockchain.ledger.core.LedgerTransactionContext;
-import com.jd.blockchain.ledger.core.MultiIDsPolicy;
+import com.jd.blockchain.ledger.MultiIDsPolicy;
 import com.jd.blockchain.ledger.core.OperationHandleContext;
-import com.jd.blockchain.ledger.core.SecurityContext;
-import com.jd.blockchain.ledger.core.SecurityPolicy;
+import com.jd.blockchain.ledger.SecurityContext;
+import com.jd.blockchain.ledger.SecurityPolicy;
 import com.jd.blockchain.ledger.core.TransactionRequestExtension;
 import com.jd.blockchain.ledger.core.UserRoleDatasetEditor;
 
-import com.jd.blockchain.ledger.core.UserRoleDatasetEditorSimple;
 import utils.Bytes;
 
 public class UserAuthorizeOperationHandle extends AbstractLedgerOperationHandle<UserAuthorizeOperation> {
@@ -60,11 +58,8 @@ public class UserAuthorizeOperationHandle extends AbstractLedgerOperationHandle<
 						if (policy == null) {
 							policy = RolesPolicy.UNION;
 						}
-						if (ledger.getLedgerDataStructure().equals(LedgerDataStructure.MERKLE_TREE)) {
-							((UserRoleDatasetEditor)userRoleDataset).addUserRoles(address, policy, authRoles);
-						} else {
-							((UserRoleDatasetEditorSimple)userRoleDataset).addUserRoles(address, policy, authRoles);
-						}
+
+						((UserRoleDatasetEditor)userRoleDataset).addUserRoles(address, policy, authRoles);
 					} else {
 						// 更改之前的授权；
 						ur.addRoles(authRoles);
@@ -75,11 +70,8 @@ public class UserAuthorizeOperationHandle extends AbstractLedgerOperationHandle<
 						if (policy != null) {
 							ur.setPolicy(policy);
 						}
-						if (ledger.getLedgerDataStructure().equals(LedgerDataStructure.MERKLE_TREE)) {
-							((UserRoleDatasetEditor)userRoleDataset).updateUserRoles(ur);
-						} else {
-							((UserRoleDatasetEditorSimple)userRoleDataset).updateUserRoles(ur);
-						}
+
+						((UserRoleDatasetEditor)userRoleDataset).updateUserRoles(ur);
 					}
 				}
 			}

@@ -34,13 +34,17 @@ public class DefaultOperationHandleRegisteration implements OperationHandleRegis
 
 		registerDefaultHandle(new ContractCodeDeployOperationHandle());
 
-		registerDefaultHandle(new JVMContractEventSendOperationHandle());
+		registerDefaultHandle(new ContractEventSendOperationHandle());
 
 		registerDefaultHandle(new ParticipantRegisterOperationHandle());
 
 		registerDefaultHandle(new ParticipantStateUpdateOperationHandle());
 
 		registerDefaultHandle(new ConsensusSettingsUpdateOperationHandle());
+
+		registerDefaultHandle(new ConsensusReconfigOperationHandle());
+
+		registerDefaultHandle(new HashAlgorithmUpdateOperationHandle());
 
 		registerDefaultHandle(new EventAccountRegisterOperationHandle());
 

@@ -24,7 +24,6 @@ import com.jd.blockchain.ledger.DataAccountRegisterOperation;
 import com.jd.blockchain.ledger.LedgerBlock;
 import com.jd.blockchain.ledger.LedgerInitSetting;
 import com.jd.blockchain.ledger.LedgerPermission;
-import com.jd.blockchain.ledger.LedgerTransaction;
 import com.jd.blockchain.ledger.TransactionContent;
 import com.jd.blockchain.ledger.TransactionPermission;
 import com.jd.blockchain.ledger.TransactionRequest;
@@ -42,7 +41,7 @@ import com.jd.blockchain.ledger.core.LedgerSecurityManager;
 import com.jd.blockchain.ledger.core.LedgerTransactionContext;
 import com.jd.blockchain.ledger.core.LedgerTransactionalEditor;
 import com.jd.blockchain.ledger.core.OperationHandleRegisteration;
-import com.jd.blockchain.ledger.core.SecurityPolicy;
+import com.jd.blockchain.ledger.SecurityPolicy;
 import com.jd.blockchain.ledger.core.TransactionBatchProcessor;
 import com.jd.blockchain.ledger.core.UserAccount;
 import com.jd.blockchain.storage.service.utils.MemoryKVStorage;
@@ -178,7 +177,7 @@ public class BlockFullRollBackTest {
         LedgerInitSetting initSetting = LedgerTestUtils.createLedgerInitSetting(partiKeys);
 
         // 创建账本；
-        LedgerEditor ldgEdt = LedgerTransactionalEditor.createEditor(initSetting, LEDGER_KEY_PREFIX, storage, storage);
+        LedgerEditor ldgEdt = LedgerTransactionalEditor.createEditor(initSetting, LEDGER_KEY_PREFIX, storage, storage, LedgerDataStructure.MERKLE_TREE);
 
         TransactionRequest genesisTxReq = LedgerTestUtils.createLedgerInitTxRequest_SHA256(partiKeys);
         LedgerTransactionContext genisisTxCtx = ldgEdt.newTransaction(genesisTxReq);

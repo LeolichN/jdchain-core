@@ -7,6 +7,7 @@ import com.jd.blockchain.ledger.*;
 import com.jd.blockchain.sdk.BlockchainService;
 import com.jd.blockchain.sdk.client.GatewayServiceFactory;
 import picocli.CommandLine;
+import utils.crypto.sm.GmSSLProvider;
 import utils.StringUtils;
 import utils.codec.Base58Utils;
 import utils.net.SSLSecurity;
@@ -92,6 +93,9 @@ public class Query implements Runnable {
     @CommandLine.Option(names = "--ssl.enabled-protocols", description = "Set ssl.enabled-protocols for SSL.", scope = CommandLine.ScopeType.INHERIT)
     String enabledProtocols;
 
+    @CommandLine.Option(names = "--ssl.host-verifier", defaultValue = "NO-OP",description = "Set host verifier for SSL. NO-OP or Default", scope = CommandLine.ScopeType.INHERIT)
+    String hostNameVerifier;
+
     @CommandLine.Option(names = "--ssl.ciphers", description = "Set ssl.ciphers for SSL.", scope = CommandLine.ScopeType.INHERIT)
     String ciphers;
 
@@ -104,10 +108,12 @@ public class Query implements Runnable {
     BlockchainService blockchainService;
 
     BlockchainService getChainService() {
+
         if (null == blockchainService) {
             if (gwSecure) {
+                GmSSLProvider.enableGMSupport(protocol);
                 blockchainService = GatewayServiceFactory.connect(gwHost, gwPort, gwSecure, new SSLSecurity(keyStoreType, keyStore, keyAlias, keyStorePassword,
-                        trustStore, trustStorePassword, trustStoreType, protocol, enabledProtocols, ciphers)).getBlockchainService();
+                        trustStore, trustStorePassword, trustStoreType, protocol, enabledProtocols, ciphers, hostNameVerifier)).getBlockchainService();
             } else {
                 blockchainService = GatewayServiceFactory.connect(gwHost, gwPort, gwSecure).getBlockchainService();
             }
@@ -125,6 +131,12 @@ public class Query implements Runnable {
         for (int i = 0; i < ledgers.length; i++) {
             System.out.printf("%-7s\t%s%n", i, ledgers[i]);
         }
+
+        if(ledgers.length == 1){
+            System.out.printf("> 0 (use default ledger)%n");
+            return ledgers[0];
+        }
+
         int selectedIndex = ScannerUtils.readRangeInt(0, ledgers.length - 1);
         return ledgers[selectedIndex];
     }
@@ -699,7 +711,7 @@ class Contract implements Runnable {
     public void run() {
         ContractInfo contract = query.getChainService().getContract(query.selectLedger(), address);
         if (null != contract) {
-            System.out.println(OnLineContractProcessor.getInstance().decompileEntranceClass(contract.getChainCode()));
+            System.out.println(OnLineContractProcessor.getInstance().decompileEntranceClass(contract.getChainCode(), contract.getLang()));
         }
     }
 }

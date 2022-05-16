@@ -7,11 +7,11 @@ import com.jd.blockchain.ledger.TransactionPermission;
 import com.jd.blockchain.ledger.core.EventManager;
 import com.jd.blockchain.ledger.core.LedgerQuery;
 import com.jd.blockchain.ledger.core.LedgerTransactionContext;
-import com.jd.blockchain.ledger.core.MultiIDsPolicy;
+import com.jd.blockchain.ledger.MultiIDsPolicy;
 import com.jd.blockchain.ledger.core.OperationHandle;
 import com.jd.blockchain.ledger.core.OperationHandleContext;
-import com.jd.blockchain.ledger.core.SecurityContext;
-import com.jd.blockchain.ledger.core.SecurityPolicy;
+import com.jd.blockchain.ledger.SecurityContext;
+import com.jd.blockchain.ledger.SecurityPolicy;
 import com.jd.blockchain.ledger.core.TransactionRequestExtension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
  * @param <T>
  */
 public abstract class AbstractLedgerOperationHandle<T extends Operation> implements OperationHandle {
-	private static final Logger LOGGER = LoggerFactory.getLogger(AbstractLedgerOperationHandle.class);
+	protected static final Logger LOGGER = LoggerFactory.getLogger(AbstractLedgerOperationHandle.class);
 
 	static {
 		DataContractRegistry.register(BytesValue.class);

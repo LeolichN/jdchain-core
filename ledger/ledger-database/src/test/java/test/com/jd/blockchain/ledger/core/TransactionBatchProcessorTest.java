@@ -36,7 +36,7 @@ import com.jd.blockchain.ledger.core.LedgerManager;
 import com.jd.blockchain.ledger.core.LedgerRepository;
 import com.jd.blockchain.ledger.core.LedgerSecurityManager;
 import com.jd.blockchain.ledger.core.OperationHandleRegisteration;
-import com.jd.blockchain.ledger.core.SecurityPolicy;
+import com.jd.blockchain.ledger.SecurityPolicy;
 import com.jd.blockchain.ledger.core.TransactionBatchProcessor;
 import com.jd.blockchain.ledger.core.TransactionSetEditor;
 import com.jd.blockchain.ledger.core.UserAccount;
@@ -309,7 +309,7 @@ public class TransactionBatchProcessorTest {
 		HashDigest txsetRootHash = ledgerRepo.getTransactionSet().getRootHash();
 
 		// 单独加载交易集合；
-		TransactionSetEditor txset = new TransactionSetEditor(txsetRootHash, cryptoSetting, "LDG://3A3dP4", STORAGE, STORAGE,
+		TransactionSetEditor txset = new TransactionSetEditor(-1, txsetRootHash, cryptoSetting, "LDG://3A3dP4", STORAGE, STORAGE, LedgerDataStructure.MERKLE_TREE,
 				false);
 		tx1 = txset.getTransaction(transactionRequest1.getTransactionHash());
 //		tx2 = txset.get(transactionRequest2.getTransactionHash());

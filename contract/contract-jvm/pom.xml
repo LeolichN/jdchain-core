@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>com.jd.blockchain</groupId>
 		<artifactId>contract-core</artifactId>
-		<version>1.6.2.RELEASE</version>
+		<version>1.6.4.RELEASE</version>
 	</parent>
 	<artifactId>contract-jvm</artifactId>
 
@@ -29,6 +29,25 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-log4j2</artifactId>
 			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.graalvm.js</groupId>
+			<artifactId>js</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.graalvm.js</groupId>
+			<artifactId>js-scriptengine</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.graalvm.truffle</groupId>
+			<artifactId>truffle-api</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.wasmer</groupId>
+			<artifactId>wasmer-jni</artifactId>
+			<version>0.3.0</version>
+			<scope>system</scope>
+			<systemPath>${basedir}/lib/wasmer-jni-amd64-linux-0.3.0.jar</systemPath>
 		</dependency>
 	</dependencies>
 

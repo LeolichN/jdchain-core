@@ -11,6 +11,8 @@ import com.jd.blockchain.transaction.*;
 import org.apache.commons.io.FilenameUtils;
 import picocli.CommandLine;
 import utils.Bytes;
+import utils.crypto.sm.GmSSLProvider;
+import utils.PropertiesUtils;
 import utils.StringUtils;
 import utils.codec.Base58Utils;
 import utils.io.BytesUtils;
@@ -18,10 +20,14 @@ import utils.io.FileUtils;
 import utils.net.SSLSecurity;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.security.cert.X509Certificate;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
@@ -56,6 +62,8 @@ import java.util.concurrent.atomic.AtomicLong;
                 TxSign.class,
                 TxSend.class,
                 TxTestKV.class,
+                TxConsensusSwitch.class,
+                TxHashAlgorithmSwitch.class,
                 CommandLine.HelpCommand.class
         }
 )
@@ -102,6 +110,9 @@ public class Tx implements Runnable {
     @CommandLine.Option(names = "--ssl.ciphers", description = "Set ssl.ciphers for SSL.", scope = CommandLine.ScopeType.INHERIT)
     String ciphers;
 
+    @CommandLine.Option(names = "--ssl.host-verifier", defaultValue = "NO-OP", description = "Set host verifier for SSL. NO-OP or Default", scope = CommandLine.ScopeType.INHERIT)
+    String hostNameVerifier;
+
     @CommandLine.Option(names = "--export", description = "Transaction export directory", scope = CommandLine.ScopeType.INHERIT)
     String export;
 
@@ -113,8 +124,9 @@ public class Tx implements Runnable {
     GatewayBlockchainServiceProxy getChainService() {
         if (null == blockchainService) {
             if (gwSecure) {
+                GmSSLProvider.enableGMSupport(protocol);
                 blockchainService = (GatewayBlockchainServiceProxy) GatewayServiceFactory.connect(gwHost, gwPort, gwSecure, new SSLSecurity(keyStoreType, keyStore, keyAlias, keyStorePassword,
-                        trustStore, trustStorePassword, trustStoreType, protocol, enabledProtocols, ciphers)).getBlockchainService();
+                        trustStore, trustStorePassword, trustStoreType, protocol, enabledProtocols, ciphers, hostNameVerifier)).getBlockchainService();
             } else {
                 blockchainService = (GatewayBlockchainServiceProxy) GatewayServiceFactory.connect(gwHost, gwPort, gwSecure).getBlockchainService();
             }
@@ -124,10 +136,17 @@ public class Tx implements Runnable {
 
     HashDigest selectLedger() {
         HashDigest[] ledgers = getChainService().getLedgerHashs();
+
         System.out.printf("select ledger, input the index: %n%-7s\t%s%n", "INDEX", "LEDGER");
         for (int i = 0; i < ledgers.length; i++) {
             System.out.printf("%-7s\t%s%n", i, ledgers[i]);
         }
+
+        if (ledgers.length == 1) {
+            System.out.printf("> 0 (use default ledger)%n");
+            return ledgers[0];
+        }
+
         int index = ScannerUtils.readRangeInt(0, ledgers.length - 1);
         return ledgers[index];
     }
@@ -382,7 +401,7 @@ class TxUserCAUpdate implements Runnable {
             return;
         }
         CertificateUtils.checkCertificateRolesAny(certificate, CertificateRole.PEER, CertificateRole.GW, CertificateRole.USER);
-        CertificateUtils.checkValidity(certificate);
+//        CertificateUtils.checkValidity(certificate);
         txTemp.user(address).ca(certificate);
         PreparedTransaction ptx = txTemp.prepare();
         String txFile = txCommand.export(ptx);
@@ -407,7 +426,7 @@ class TxUserStateUpdate implements Runnable {
     @CommandLine.Option(names = "--address", required = true, description = "User address", scope = CommandLine.ScopeType.INHERIT)
     String address;
 
-    @CommandLine.Option(names = "--state", required = true, description = "User state，Optional values: FREEZE,NORMAL,REVOKE", scope = CommandLine.ScopeType.INHERIT)
+    @CommandLine.Option(names = "--state", required = true, description = "User state, Optional values: FREEZE,NORMAL,REVOKE", scope = CommandLine.ScopeType.INHERIT)
     AccountState state;
 
     @CommandLine.ParentCommand
@@ -473,8 +492,11 @@ class TxDataAccountRegister implements Runnable {
 @CommandLine.Command(name = "contract-deploy", mixinStandardHelpOptions = true, header = "Deploy or update contract.")
 class TxContractDeploy implements Runnable {
 
-    @CommandLine.Option(names = "--car", required = true, description = "The car file path", scope = CommandLine.ScopeType.INHERIT)
-    File car;
+    @CommandLine.Option(names = "--code", required = true, description = "The car file path", scope = CommandLine.ScopeType.INHERIT)
+    File code;
+
+    @CommandLine.Option(names = "--lang", required = true, description = "The contract language", defaultValue = "Java", scope = CommandLine.ScopeType.INHERIT)
+    ContractLang lang;
 
     @CommandLine.Option(names = "--pubkey", description = "The pubkey of the exist contract", scope = CommandLine.ScopeType.INHERIT)
     String pubkey;
@@ -491,7 +513,7 @@ class TxContractDeploy implements Runnable {
         } else {
             account = new BlockchainIdentityData(KeyGenUtils.decodePubKey(pubkey));
         }
-        txTemp.contracts().deploy(account, FileUtils.readBytes(car));
+        txTemp.contracts().deploy(account, FileUtils.readBytes(code), lang);
         PreparedTransaction ptx = txTemp.prepare();
         String txFile = txCommand.export(ptx);
         if (null != txFile) {
@@ -691,6 +713,9 @@ class TxContractCall implements Runnable {
     @CommandLine.Option(names = "--args", split = ",", description = "Method arguments", scope = CommandLine.ScopeType.INHERIT)
     String[] args;
 
+    @CommandLine.Option(names = "--ver", defaultValue = "-1", description = "Contract version", scope = CommandLine.ScopeType.INHERIT)
+    long version;
+
     @CommandLine.ParentCommand
     private Tx txCommand;
 
@@ -707,7 +732,7 @@ class TxContractCall implements Runnable {
             tvs = new TypedValue[]{};
         }
 
-        txTemp.contract(Bytes.fromBase58(address)).invoke(method, new BytesDataList(tvs));
+        txTemp.contract(Bytes.fromBase58(address)).invoke(method, new BytesDataList(tvs), version);
         PreparedTransaction ptx = txTemp.prepare();
         String txFile = txCommand.export(ptx);
         if (null != txFile) {
@@ -721,6 +746,7 @@ class TxContractCall implements Runnable {
                         BytesValue content = response.getOperationResults()[i].getResult();
                         switch (content.getType()) {
                             case TEXT:
+                            case JSON:
                                 System.out.println("return string: " + content.getBytes().toUTF8String());
                                 break;
                             case INT64:
@@ -735,7 +761,7 @@ class TxContractCall implements Runnable {
                         }
                     }
                 } else {
-                    System.err.println("call contract failed!");
+                    System.err.println("call contract failed: " + response.getExecutionState());
                 }
             }
         }
@@ -748,7 +774,7 @@ class TxContractStateUpdate implements Runnable {
     @CommandLine.Option(names = "--address", required = true, description = "Contract address", scope = CommandLine.ScopeType.INHERIT)
     String address;
 
-    @CommandLine.Option(names = "--state", required = true, description = "Contract state，Optional values: FREEZE,NORMAL,REVOKE", scope = CommandLine.ScopeType.INHERIT)
+    @CommandLine.Option(names = "--state", required = true, description = "Contract state, Optional values: FREEZE,NORMAL,REVOKE", scope = CommandLine.ScopeType.INHERIT)
     AccountState state;
 
     @CommandLine.ParentCommand
@@ -1138,6 +1164,94 @@ class TxContractAccountPermission implements Runnable {
                     System.out.printf("update contract: [%s] permission\n", address);
                 } else {
                     System.err.printf("update contract permission failed: [%s]!%n", response.getExecutionState());
+                }
+            }
+        }
+    }
+}
+
+@CommandLine.Command(name = "consensus-switch", mixinStandardHelpOptions = true, header = "Switch consensus type.")
+class TxConsensusSwitch implements Runnable {
+
+    @CommandLine.Option(names = "--consensus", required = true, description = "New consensus type. Options: `BFTSMART`,`RAFT`,`MQ`", scope = CommandLine.ScopeType.INHERIT)
+    ConsensusTypeEnum consensus;
+
+    @CommandLine.Option(names = "--config", required = true, description = "Set new consensus config file", scope = CommandLine.ScopeType.INHERIT)
+    String config;
+
+    @CommandLine.ParentCommand
+    private Tx txCommand;
+
+    @Override
+    public void run() {
+        Properties properties;
+
+        if (ConsensusTypeEnum.UNKNOWN.equals(consensus)) {
+            System.err.println("unknown consensus type!");
+            return;
+        }
+
+        if (StringUtils.isEmpty(config)) {
+            System.err.println("config file path are empty!");
+            return;
+        }
+
+        TransactionTemplate txTemp = txCommand.newTransaction();
+
+        try (InputStream in = new FileInputStream(config)) {
+            properties = FileUtils.readProperties(in);
+        } catch (IOException e) {
+            throw new IllegalStateException(e.getMessage(), e);
+        }
+
+        txTemp.consensus().update(consensus.getProvider(), PropertiesUtils.getOrderedValues(properties));
+        PreparedTransaction ptx = txTemp.prepare();
+        String txFile = txCommand.export(ptx);
+        if (null != txFile) {
+            System.err.println("export transaction success: " + txFile);
+        } else {
+            if (txCommand.sign(ptx)) {
+                TransactionResponse response = ptx.commit();
+                if (response.isSuccess()) {
+                    System.out.println("switch consensus type success");
+                } else {
+                    System.err.printf("switch consensus type failed: [%s]!%n", response.getExecutionState());
+                }
+            }
+        }
+    }
+}
+
+@CommandLine.Command(name = "hash-algo-switch", mixinStandardHelpOptions = true, header = "Switch crypto hash algo.")
+class TxHashAlgorithmSwitch implements Runnable {
+
+    @CommandLine.Option(names = {"-a", "--algorithm"}, required = true, description = "New crypto hash algo. Options:'SHA256','RIPEMD160','SM3'", scope = CommandLine.ScopeType.INHERIT)
+    String newHashAlgo;
+
+    @CommandLine.ParentCommand
+    private Tx txCommand;
+
+    @Override
+    public void run() {
+
+        if (StringUtils.isEmpty(newHashAlgo)) {
+            System.err.println("new hash algorithm is empty!");
+            return;
+        }
+
+        TransactionTemplate txTemp = txCommand.newTransaction();
+        txTemp.settings().hashAlgorithm(newHashAlgo);
+        PreparedTransaction ptx = txTemp.prepare();
+        String txFile = txCommand.export(ptx);
+        if (null != txFile) {
+            System.err.println("export transaction success: " + txFile);
+        } else {
+            if (txCommand.sign(ptx)) {
+                TransactionResponse response = ptx.commit();
+                if (response.isSuccess()) {
+                    System.out.println("switch new hash algorithm success");
+                } else {
+                    System.err.printf("switch new hash algorithm failed: [%s]!%n", response.getExecutionState());
                 }
             }
         }

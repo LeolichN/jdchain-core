@@ -9,13 +9,12 @@ import com.jd.blockchain.ledger.RootCAUpdateOperation;
 import com.jd.blockchain.ledger.core.EventManager;
 import com.jd.blockchain.ledger.core.LedgerAdminDataSet;
 import com.jd.blockchain.ledger.core.LedgerAdminDataSetEditor;
-import com.jd.blockchain.ledger.core.LedgerAdminDataSetEditorSimple;
 import com.jd.blockchain.ledger.core.LedgerQuery;
 import com.jd.blockchain.ledger.core.LedgerTransactionContext;
-import com.jd.blockchain.ledger.core.MultiIDsPolicy;
+import com.jd.blockchain.ledger.MultiIDsPolicy;
 import com.jd.blockchain.ledger.core.OperationHandleContext;
-import com.jd.blockchain.ledger.core.SecurityContext;
-import com.jd.blockchain.ledger.core.SecurityPolicy;
+import com.jd.blockchain.ledger.SecurityContext;
+import com.jd.blockchain.ledger.SecurityPolicy;
 import com.jd.blockchain.ledger.core.TransactionRequestExtension;
 
 import java.security.PublicKey;
@@ -82,11 +81,7 @@ public class RootCAUpdateOperationHandle extends AbstractLedgerOperationHandle<R
                 throw new LedgerException("At least one root certificate is required!");
             }
 
-            if (ledger.getLedgerDataStructure().equals(LedgerDataStructure.MERKLE_TREE)) {
-                ((LedgerAdminDataSetEditor) adminDataset).updateLedgerCA(ledgerCAMap.values().toArray(new String[0]));
-            } else {
-                ((LedgerAdminDataSetEditorSimple) adminDataset).updateLedgerCA(ledgerCAMap.values().toArray(new String[0]));
-            }
+            ((LedgerAdminDataSetEditor) adminDataset).updateLedgerCA(ledgerCAMap.values().toArray(new String[0]));
 
         } else {
             throw new LedgerException("Not in CA identity mode!");

@@ -5,25 +5,25 @@
 	<parent>
 		<groupId>com.jd.blockchain</groupId>
 		<artifactId>jdchain-parent</artifactId>
-		<version>1.1.7.RELEASE</version>
+		<version>1.1.8.RELEASE</version>
 		<relativePath>../project/parent</relativePath>
 	</parent>
 
 	<groupId>com.jd.blockchain</groupId>
 	<artifactId>jdchain-core</artifactId>
-	<version>1.6.2.RELEASE</version>
+	<version>1.6.4.RELEASE</version>
 	<packaging>pom</packaging>
 
 	<properties>
-		<utils.version>2.2.1.RELEASE</utils.version>
-		<httpservice.version>2.1.1.RELEASE</httpservice.version>
-		<binaryproto.version>1.6.4.RELEASE</binaryproto.version>
-		<bftsmart.version>0.7.4.RELEASE</bftsmart.version>
-		<kvdb.version>1.1.4.RELEASE</kvdb.version>
+		<utils.version>2.2.3.RELEASE</utils.version>
+		<httpservice.version>2.1.3.RELEASE</httpservice.version>
+		<binaryproto.version>1.6.6.RELEASE</binaryproto.version>
+		<bftsmart.version>0.7.6.RELEASE</bftsmart.version>
+		<kvdb.version>1.1.6.RELEASE</kvdb.version>
 
-		<framework.version>1.6.2.RELEASE</framework.version>
+		<framework.version>1.6.4.RELEASE</framework.version>
 
-		<explorer.version>1.6.0.RELEASE</explorer.version>
+		<explorer.version>1.6.4.RELEASE</explorer.version>
 	</properties>
 
 	<modules>
@@ -34,7 +34,6 @@
 
 		<module>consensus</module>
 		<module>contract</module>
-		<module>crypto</module>
 		<module>ledger</module>
 		<module>runtime</module>
 		<module>storage</module>
@@ -42,7 +41,6 @@
 		<module>peer-ledger-service</module>
 		<module>peer-web-server</module>
 		<module>peer</module>
-		<module>manager</module>
 		<module>tools</module>
 	</modules>
 
@@ -56,12 +54,12 @@
 			</dependency>
 			<dependency>
 				<groupId>com.jd.utils</groupId>
-				<artifactId>utils-crypto-classic</artifactId>
+				<artifactId>utils-crypto-sm</artifactId>
 				<version>${utils.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>com.jd.utils</groupId>
-				<artifactId>utils-crypto-sm</artifactId>
+				<artifactId>utils-crypto-classic</artifactId>
 				<version>${utils.version}</version>
 			</dependency>
 			<dependency>
